@@ -575,97 +575,157 @@ function estimateInstruments(spectrum, bpm, audioBuffer) {
   const { centroid, rolloff, zcr, rms } = spectrum;
   const candidates = [];
 
-  // ── 고조파 비율(HNR) 계산 ──
-  // 피아노·현악기는 HNR 높음 / 드럼·잡음은 낮음
-  let hnr = 0;
-  if (audioBuffer) hnr = calcHNR(audioBuffer);
+  let hnr       = audioBuffer ? calcHNR(audioBuffer)       : 0;
+  let decayRate = audioBuffer ? calcDecayRate(audioBuffer)  : 0;
+  let flatness  = audioBuffer ? calcSpectralFlatness(audioBuffer) : 0;
 
-  // ── 에너지 감쇠 패턴 ──
-  // 피아노: 타건 후 급격히 감쇠 → 감쇠율 높음
-  let decayRate = 0;
-  if (audioBuffer) decayRate = calcDecayRate(audioBuffer);
+  // ── 앙상블·오케스트라 감지 ──
+  // 여러 악기가 동시에 울리면 스펙트럼이 고르게 퍼짐(flatness 높음)
+  // 단일 악기는 뾰족한 배음 구조 → flatness 낮음
+  const isEnsemble = flatness > 0.18;
 
-  // ── 판정 로직 ──
-
-  // 피아노 판정 조건:
-  // 중고음 무게중심(600~2800Hz) + 높은 HNR + 높은 감쇠율 + 낮은 ZCR
-  const pianoCentroid = centroid > 600 && centroid < 3200;
-  const pianoHNR      = hnr > 0.35;
-  const pianoDecay    = decayRate > 0.3;
-  const pianoZCR      = zcr < 0.10;
-  const pianoScore    = (pianoCentroid?2:0)+(pianoHNR?2:0)+(pianoDecay?2:0)+(pianoZCR?1:0);
-
-  if (pianoScore >= 4)
-    candidates.push({ name:'피아노', conf:50+pianoScore*5, icon:'🎹' });
-
-  // 현악기 판정:
-  // 높은 무게중심(2000~4000Hz) + 높은 HNR + 낮은 ZCR + 낮은 감쇠율(지속음)
-  const stringCentroid = centroid > 2000 && centroid < 5000;
-  const stringHNR      = hnr > 0.4;
-  const stringDecay    = decayRate < 0.25; // 지속음 — 감쇠율 낮음
-  const stringZCR      = zcr < 0.08;
-  const stringScore    = (stringCentroid?2:0)+(stringHNR?2:0)+(stringDecay?1:0)+(stringZCR?1:0);
-
-  // 피아노 점수가 높으면 현악기 점수 억제
-  if (stringScore >= 4 && pianoScore < 5)
-    candidates.push({ name:'현악기(바이올린·첼로)', conf:45+stringScore*5, icon:'🎻' });
-
-  // 어쿠스틱 기타:
-  // 중저음 무게중심(400~1800Hz) + 중간 감쇠율 + 낮은 ZCR
-  const guitarCentroid = centroid > 400 && centroid < 1800;
-  const guitarDecay    = decayRate > 0.2 && decayRate < 0.5;
-  const guitarScore    = (guitarCentroid?2:0)+(guitarDecay?1:0)+(zcr<0.09?1:0);
-
-  if (guitarScore >= 3 && pianoScore < 4)
-    candidates.push({ name:'어쿠스틱 기타', conf:40+guitarScore*5, icon:'🎸' });
-
-  // 보컬:
-  // 중음 무게중심(250~2200Hz) + 높은 HNR + 강한 에너지 + 낮은 감쇠율(지속음)
-  const vocalCentroid = centroid > 250 && centroid < 2200;
-  const vocalHNR      = hnr > 0.45;
-  const vocalEnergy   = rms > 0.025;
-  const vocalDecay    = decayRate < 0.2;
-  const vocalScore    = (vocalCentroid?1:0)+(vocalHNR?2:0)+(vocalEnergy?1:0)+(vocalDecay?1:0);
-
-  if (vocalScore >= 4)
-    candidates.push({ name:'보컬(노래)', conf:40+vocalScore*5, icon:'🎤' });
-
-  // 드럼·타악기:
-  // 높은 ZCR + 강한 에너지 + 낮은 HNR
-  const drumZCR    = zcr > 0.10;
-  const drumEnergy = rms > 0.025;
-  const drumHNR    = hnr < 0.3;
-  const drumScore  = (drumZCR?2:0)+(drumEnergy?1:0)+(drumHNR?2:0);
-
-  if (drumScore >= 4)
-    candidates.push({ name:'타악기·드럼', conf:40+drumScore*5, icon:'🥁' });
-
-  // 전자악기:
-  // 낮은 무게중심(<1000Hz) + 낮은 ZCR + 강한 에너지
-  if (centroid < 1000 && zcr < 0.06 && rms > 0.035)
-    candidates.push({ name:'전자악기·베이스', conf:60, icon:'🎛' });
-
-  // 관악기:
-  // 매우 높은 무게중심(>3500Hz) + 높은 HNR + 낮은 ZCR
-  if (centroid > 3500 && hnr > 0.4 && zcr < 0.07)
-    candidates.push({ name:'관악기·목관악기', conf:60, icon:'🎷' });
-
-  // 결과 정렬
-  candidates.sort((a,b)=>b.conf-a.conf);
-
-  // 결과 없으면 — 신뢰도 낮음 표시
-  if (candidates.length === 0) {
-    if (centroid > 2500)
-      candidates.push({ name:'고음 악기류 (판별 불확실)', conf:35, icon:'🎵' });
+  if (isEnsemble) {
+    // 오케스트라 vs 실내악 구분
+    if (rms > 0.04)
+      candidates.push({ name:'오케스트라·대편성 앙상블', conf:80, icon:'🎼' });
     else
-      candidates.push({ name:'저중음 악기류 (판별 불확실)', conf:35, icon:'🎵' });
+      candidates.push({ name:'실내악·소편성 앙상블', conf:75, icon:'🎼' });
+
+    // 앙상블 안에서 주도 음역 추정
+    if (centroid > 1800)
+      candidates.push({ name:'관악기·트럼펫 계열 주도', conf:65, icon:'🎺' });
+    else if (centroid > 1000)
+      candidates.push({ name:'현악기·목관악기 혼합', conf:60, icon:'🎻' });
+    else
+      candidates.push({ name:'저음 현악기·금관악기 혼합', conf:55, icon:'🎺' });
+
+    candidates.sort((a,b)=>b.conf-a.conf);
+    return candidates.slice(0,2);
   }
 
-  // 신뢰도 낮은 항목은 이름에 표시
-  return candidates.slice(0,3).map(c => ({
+  // ── 단일 악기 판정 ──
+
+  // 트럼펫·금관악기:
+  // 무게중심 800~2500Hz + 높은 HNR(0.5↑) + 낮은 감쇠율(지속음) + 중간 ZCR
+  // 트럼펫 기본음: 200~800Hz, 배음 2000~4000Hz까지 풍부
+  const brassCenter  = centroid > 800  && centroid < 3000;
+  const brassHNR     = hnr > 0.45;
+  const brassSustain = decayRate < 0.22;  // 지속음 — 감쇠 느림
+  const brassZCR     = zcr > 0.04 && zcr < 0.12;
+  const brassScore   = (brassCenter?2:0)+(brassHNR?3:0)+(brassSustain?2:0)+(brassZCR?1:0);
+  if (brassScore >= 6)
+    candidates.push({ name:'트럼펫·금관악기', conf:50+brassScore*4, icon:'🎺' });
+
+  // 목관악기(플루트·오보에·클라리넷):
+  // 높은 무게중심(2000~5000Hz) + 높은 HNR + 지속음 + 낮은 ZCR
+  const woodCenter  = centroid > 2000 && centroid < 5500;
+  const woodHNR     = hnr > 0.5;
+  const woodSustain = decayRate < 0.2;
+  const woodScore   = (woodCenter?2:0)+(woodHNR?3:0)+(woodSustain?2:0)+(zcr<0.08?1:0);
+  if (woodScore >= 6 && brassScore < 6)
+    candidates.push({ name:'목관악기(플루트·오보에)', conf:48+woodScore*4, icon:'🎷' });
+
+  // 피아노:
+  // 무게중심 700~2800Hz + 높은 HNR + 높은 감쇠율(타건 후 감쇠) + 낮은 ZCR
+  // 핵심: 감쇠율이 트럼펫보다 반드시 높아야 함
+  const pianoCenter  = centroid > 700  && centroid < 2800;
+  const pianoHNR     = hnr > 0.35;
+  const pianoDecay   = decayRate > 0.28; // 타건 후 감쇠 — 트럼펫과 구분
+  const pianoZCR     = zcr < 0.09;
+  const pianoScore   = (pianoCenter?2:0)+(pianoHNR?2:0)+(pianoDecay?3:0)+(pianoZCR?1:0);
+  if (pianoScore >= 6 && brassScore < 5)
+    candidates.push({ name:'피아노', conf:48+pianoScore*4, icon:'🎹' });
+
+  // 현악기(바이올린·첼로):
+  // 높은 무게중심 + 높은 HNR + 지속음 + 낮은 ZCR
+  // 트럼펫보다 무게중심 더 높음
+  const stringCenter  = centroid > 2200 && centroid < 5000;
+  const stringHNR     = hnr > 0.45;
+  const stringSustain = decayRate < 0.2;
+  const stringScore   = (stringCenter?2:0)+(stringHNR?3:0)+(stringSustain?2:0)+(zcr<0.07?1:0);
+  if (stringScore >= 6 && brassScore < 5 && pianoScore < 5)
+    candidates.push({ name:'현악기(바이올린·첼로)', conf:46+stringScore*4, icon:'🎻' });
+
+  // 어쿠스틱 기타:
+  // 중저음 무게중심 + 중간 감쇠율 + 낮은 ZCR
+  const guitarCenter = centroid > 400  && centroid < 1800;
+  const guitarDecay  = decayRate > 0.22 && decayRate < 0.55;
+  const guitarScore  = (guitarCenter?2:0)+(guitarDecay?2:0)+(zcr<0.09?1:0)+(hnr>0.3?1:0);
+  if (guitarScore >= 4 && pianoScore < 5 && brassScore < 5)
+    candidates.push({ name:'어쿠스틱 기타', conf:42+guitarScore*5, icon:'🎸' });
+
+  // 보컬:
+  // 조건 강화 — HNR 매우 높아야 하고, 에너지 강해야 하고, 지속음
+  // 트럼펫·현악기와 겹치지 않도록 복합 조건 강화
+  const vocalCenter  = centroid > 200  && centroid < 2000;
+  const vocalHNR     = hnr > 0.55;      // 기존보다 높임
+  const vocalEnergy  = rms > 0.03;      // 기존보다 높임
+  const vocalSustain = decayRate < 0.18;
+  const vocalZCR     = zcr < 0.07;      // 기존보다 낮춤
+  const vocalScore   = (vocalCenter?1:0)+(vocalHNR?3:0)+(vocalEnergy?1:0)+(vocalSustain?1:0)+(vocalZCR?1:0);
+  // 다른 악기 점수가 높으면 보컬 억제
+  if (vocalScore >= 6 && brassScore < 5 && stringScore < 5 && pianoScore < 5)
+    candidates.push({ name:'보컬(노래)', conf:44+vocalScore*4, icon:'🎤' });
+
+  // 드럼·타악기:
+  if (zcr > 0.12 && rms > 0.025 && hnr < 0.3)
+    candidates.push({ name:'타악기·드럼', conf:70, icon:'🥁' });
+
+  // 전자악기:
+  if (centroid < 900 && zcr < 0.05 && rms > 0.04)
+    candidates.push({ name:'전자악기·신시사이저', conf:65, icon:'🎛' });
+
+  candidates.sort((a,b)=>b.conf-a.conf);
+
+  if (candidates.length === 0) {
+    // 어디에도 안 맞으면 — 무게중심으로 큰 범주만
+    if (centroid > 2000)
+      candidates.push({ name:'고음 악기류 (판별 불확실)', conf:30, icon:'🎵' });
+    else
+      candidates.push({ name:'저중음 악기류 (판별 불확실)', conf:30, icon:'🎵' });
+  }
+
+  return candidates.slice(0,2).map(c => ({
     ...c,
     name: c.conf < 50 ? `${c.name} (추정)` : c.name
   }));
+}
+
+// 스펙트럼 평탄도(Spectral Flatness) — 앙상블 감지 핵심 지표
+// 여러 악기가 섞일수록 높아짐 (0~1)
+function calcSpectralFlatness(audioBuffer) {
+  try {
+    const data = audioBuffer.getChannelData(0);
+    const N    = 2048;
+    const hop  = Math.floor(data.length / 6);
+    let sumFlat = 0, cnt = 0;
+
+    for (let start = 0; start + N < data.length; start += hop) {
+      const mag = new Float32Array(N / 2);
+      for (let k = 1; k < N / 2; k++) {
+        let re = 0, im = 0;
+        for (let n = 0; n < N; n += 4) {
+          const a = -2 * Math.PI * k * n / N;
+          re += data[start + n] * Math.cos(a);
+          im += data[start + n] * Math.sin(a);
+        }
+        mag[k] = Math.sqrt(re * re + im * im) + 1e-10;
+      }
+      // 기하평균 / 산술평균
+      let logSum = 0, arith = 0;
+      const len = N / 2 - 1;
+      for (let k = 1; k < N / 2; k++) {
+        logSum += Math.log(mag[k]);
+        arith  += mag[k];
+      }
+      const geo  = Math.exp(logSum / len);
+      const mean = arith / len;
+      sumFlat += mean > 0 ? geo / mean : 0;
+      cnt++;
+      if (cnt >= 4) break;
+    }
+    return cnt > 0 ? sumFlat / cnt : 0;
+  } catch(e) { return 0; }
 }
 
 // 고조파 비율(HNR) — 주기적 신호 강도 측정
