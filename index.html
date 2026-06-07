@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>음악 감별기 v5</title>
+<title>소리결 — 음악 스타일 분석기</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700;900&family=Space+Mono:wght@400;700&display=swap');
 :root{
-  --bg:#0c0c12;--surface:#14141e;--surface2:#1c1c2a;--border:#2a2a3e;
-  --accent:#8b7cf8;--accent2:#f8a96a;--accent3:#6af8b0;
-  --text:#e8e8f4;--muted:#7070a0;--danger:#f87070;--glow:rgba(139,124,248,0.2);
+  --bg:#0e0e18;--surface:#161622;--surface2:#1e1e2e;--border:#2e2e46;
+  --accent:#c4b8ff;--accent2:#ffc890;--accent3:#90ffd0;
+  --text:#f4f4ff;--muted:#a0a0c8;--danger:#ff9999;--glow:rgba(196,184,255,0.22);
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 body{background:var(--bg);color:var(--text);font-family:'Noto Serif KR',serif;
@@ -28,11 +28,12 @@ body{background:var(--bg);color:var(--text);font-family:'Noto Serif KR',serif;
 header{width:100%;padding:18px 16px 13px;text-align:center;position:relative;}
 header::after{content:'';position:absolute;bottom:0;left:8%;right:8%;height:1px;
   background:linear-gradient(90deg,transparent,var(--accent),transparent);}
-h1{font-size:1.45rem;font-weight:900;
+h1{font-size:1.7rem;font-weight:900;
   background:linear-gradient(135deg,#fff 20%,var(--accent));
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-.subtitle{font-family:'Space Mono',monospace;font-size:.55rem;color:var(--muted);
-  margin-top:5px;letter-spacing:.12em;text-transform:uppercase;}
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  letter-spacing:-0.02em;}
+.subtitle{font-family:'Space Mono',monospace;font-size:.62rem;color:var(--muted);
+  margin-top:6px;letter-spacing:.12em;text-transform:uppercase;}
 
 /* 녹음 */
 .record-zone{display:flex;flex-direction:column;align-items:center;gap:13px;}
@@ -169,13 +170,19 @@ h1{font-size:1.45rem;font-weight:900;
 .help{font-size:.68rem;color:var(--muted);text-align:center;line-height:1.8;}
 footer{margin-top:34px;font-family:'Space Mono',monospace;font-size:.48rem;
   color:var(--border);letter-spacing:.1em;text-transform:uppercase;text-align:center;}
+.memorial{
+  margin-top:20px;padding:14px 20px;text-align:center;
+  font-family:'Noto Serif KR',serif;font-size:.72rem;
+  color:rgba(184,170,255,0.45);line-height:1.9;
+  letter-spacing:.04em;
+}
 </style>
 </head>
 <body>
 
 <header>
-  <h1>음악 감별기</h1>
-  <p class="subtitle">Music Style Detector v5 · MIR 분석</p>
+  <h1>소리결 <span style="font-size:.5em;font-weight:700;opacity:.75;letter-spacing:.01em;">(음악 감별기)</span></h1>
+  <p class="subtitle">Music Style Analyzer · MIR + 국악 분석</p>
 </header>
 
 <nav class="tab-nav">
@@ -270,7 +277,15 @@ footer{margin-top:34px;font-family:'Space Mono',monospace;font-size:.48rem;
   <div id="historyContent"></div>
 </div>
 
-<footer>© 2025 음악 감별기 v5 · MIR 분석 엔진 · AudD API</footer>
+<footer>© 2025 소리결 · MIR 분석 엔진 · AudD API</footer>
+<div style="margin-top:10px;font-family:'Space Mono',monospace;font-size:.5rem;
+  color:rgba(196,184,255,0.35);text-align:center;letter-spacing:.08em;">
+  제작: 허병두 &nbsp;·&nbsp; 2026년 6월 6일 &nbsp;·&nbsp; V 6.0
+</div>
+<div class="memorial">
+  어머니 임경애 마리아 님을 추모하며 헌정합니다<br>
+  고맙습니다 &nbsp;·&nbsp; 미안합니다 &nbsp;·&nbsp; 사랑합니다
+</div>
 
 <script>
 // ══════════════════════════════════════════════════════
@@ -543,53 +558,163 @@ function analyzeSpectrum(audioBuffer) {
 }
 
 // ══════════════════════════════════════════════════════
-//  MIR 엔진 4 — 악기 추정 (스펙트럼 특성 기반, 개선)
+//  MIR 엔진 4 — 악기 추정 (개선판)
+//  스펙트럼 무게중심 + 영교차율 + 고조파 비율(HNR)
+//  + 에너지 감쇠 패턴(피아노 특성) 복합 분석
 // ══════════════════════════════════════════════════════
-function estimateInstruments(spectrum, bpm) {
+function estimateInstruments(spectrum, bpm, audioBuffer) {
   const { centroid, rolloff, zcr, rms } = spectrum;
-  const instruments = [];
+  const candidates = [];
 
-  // 피아노: 중고음 무게중심(800~2500Hz), 낮은 영교차율, 중간 음량
-  if (centroid>800 && centroid<3000 && zcr<0.08 && rms>0.01)
-    instruments.push({ name:'피아노', conf:85, icon:'🎹' });
+  // ── 고조파 비율(HNR) 계산 ──
+  // 피아노·현악기는 HNR 높음 / 드럼·잡음은 낮음
+  let hnr = 0;
+  if (audioBuffer) hnr = calcHNR(audioBuffer);
 
-  // 어쿠스틱 기타: 중저음 무게중심(400~1500Hz), 낮은 영교차율
-  if (centroid>400 && centroid<1600 && zcr<0.1 && rms>0.008)
-    instruments.push({ name:'어쿠스틱 기타', conf:75, icon:'🎸' });
+  // ── 에너지 감쇠 패턴 ──
+  // 피아노: 타건 후 급격히 감쇠 → 감쇠율 높음
+  let decayRate = 0;
+  if (audioBuffer) decayRate = calcDecayRate(audioBuffer);
 
-  // 전기 기타: 높은 무게중심, 롤오프 높음
-  if (centroid>2000 && rolloff>4000 && zcr>0.05)
-    instruments.push({ name:'전기 기타', conf:70, icon:'🎸' });
+  // ── 판정 로직 ──
 
-  // 바이올린/현악기: 높은 무게중심, 높은 롤오프, 낮은 영교차율
-  if (centroid>2500 && rolloff>5000 && zcr<0.08)
-    instruments.push({ name:'현악기(바이올린·첼로)', conf:72, icon:'🎻' });
+  // 피아노 판정 조건:
+  // 중고음 무게중심(600~2800Hz) + 높은 HNR + 높은 감쇠율 + 낮은 ZCR
+  const pianoCentroid = centroid > 600 && centroid < 3200;
+  const pianoHNR      = hnr > 0.35;
+  const pianoDecay    = decayRate > 0.3;
+  const pianoZCR      = zcr < 0.10;
+  const pianoScore    = (pianoCentroid?2:0)+(pianoHNR?2:0)+(pianoDecay?2:0)+(pianoZCR?1:0);
 
-  // 드럼/타악기: 높은 영교차율, 강한 에너지
-  if (zcr>0.12 && rms>0.02)
-    instruments.push({ name:'타악기·드럼', conf:78, icon:'🥁' });
+  if (pianoScore >= 4)
+    candidates.push({ name:'피아노', conf:50+pianoScore*5, icon:'🎹' });
 
-  // 보컬: 중음 무게중심(250~2000Hz), 낮은 영교차율, 강한 에너지
-  if (centroid>250 && centroid<2200 && zcr<0.07 && rms>0.02)
-    instruments.push({ name:'보컬(노래)', conf:80, icon:'🎤' });
+  // 현악기 판정:
+  // 높은 무게중심(2000~4000Hz) + 높은 HNR + 낮은 ZCR + 낮은 감쇠율(지속음)
+  const stringCentroid = centroid > 2000 && centroid < 5000;
+  const stringHNR      = hnr > 0.4;
+  const stringDecay    = decayRate < 0.25; // 지속음 — 감쇠율 낮음
+  const stringZCR      = zcr < 0.08;
+  const stringScore    = (stringCentroid?2:0)+(stringHNR?2:0)+(stringDecay?1:0)+(stringZCR?1:0);
 
-  // 전자악기: 낮은 무게중심, 높은 에너지, 낮은 영교차율
-  if (centroid<800 && rms>0.04 && zcr<0.06)
-    instruments.push({ name:'전자악기·베이스', conf:73, icon:'🎛' });
+  // 피아노 점수가 높으면 현악기 점수 억제
+  if (stringScore >= 4 && pianoScore < 5)
+    candidates.push({ name:'현악기(바이올린·첼로)', conf:45+stringScore*5, icon:'🎻' });
 
-  // 플루트/목관악기: 매우 높은 무게중심, 낮은 zcr
-  if (centroid>3000 && rolloff>6000 && zcr<0.07)
-    instruments.push({ name:'목관악기·플루트', conf:68, icon:'🎵' });
+  // 어쿠스틱 기타:
+  // 중저음 무게중심(400~1800Hz) + 중간 감쇠율 + 낮은 ZCR
+  const guitarCentroid = centroid > 400 && centroid < 1800;
+  const guitarDecay    = decayRate > 0.2 && decayRate < 0.5;
+  const guitarScore    = (guitarCentroid?2:0)+(guitarDecay?1:0)+(zcr<0.09?1:0);
 
-  // 결과가 없으면 fallback
-  if (instruments.length===0) {
-    if (centroid>2000)
-      instruments.push({ name:'고음 악기(기타·관악기류)', conf:50, icon:'🎵' });
+  if (guitarScore >= 3 && pianoScore < 4)
+    candidates.push({ name:'어쿠스틱 기타', conf:40+guitarScore*5, icon:'🎸' });
+
+  // 보컬:
+  // 중음 무게중심(250~2200Hz) + 높은 HNR + 강한 에너지 + 낮은 감쇠율(지속음)
+  const vocalCentroid = centroid > 250 && centroid < 2200;
+  const vocalHNR      = hnr > 0.45;
+  const vocalEnergy   = rms > 0.025;
+  const vocalDecay    = decayRate < 0.2;
+  const vocalScore    = (vocalCentroid?1:0)+(vocalHNR?2:0)+(vocalEnergy?1:0)+(vocalDecay?1:0);
+
+  if (vocalScore >= 4)
+    candidates.push({ name:'보컬(노래)', conf:40+vocalScore*5, icon:'🎤' });
+
+  // 드럼·타악기:
+  // 높은 ZCR + 강한 에너지 + 낮은 HNR
+  const drumZCR    = zcr > 0.10;
+  const drumEnergy = rms > 0.025;
+  const drumHNR    = hnr < 0.3;
+  const drumScore  = (drumZCR?2:0)+(drumEnergy?1:0)+(drumHNR?2:0);
+
+  if (drumScore >= 4)
+    candidates.push({ name:'타악기·드럼', conf:40+drumScore*5, icon:'🥁' });
+
+  // 전자악기:
+  // 낮은 무게중심(<1000Hz) + 낮은 ZCR + 강한 에너지
+  if (centroid < 1000 && zcr < 0.06 && rms > 0.035)
+    candidates.push({ name:'전자악기·베이스', conf:60, icon:'🎛' });
+
+  // 관악기:
+  // 매우 높은 무게중심(>3500Hz) + 높은 HNR + 낮은 ZCR
+  if (centroid > 3500 && hnr > 0.4 && zcr < 0.07)
+    candidates.push({ name:'관악기·목관악기', conf:60, icon:'🎷' });
+
+  // 결과 정렬
+  candidates.sort((a,b)=>b.conf-a.conf);
+
+  // 결과 없으면 — 신뢰도 낮음 표시
+  if (candidates.length === 0) {
+    if (centroid > 2500)
+      candidates.push({ name:'고음 악기류 (판별 불확실)', conf:35, icon:'🎵' });
     else
-      instruments.push({ name:'저중음 악기(피아노·현악기류)', conf:50, icon:'🎵' });
+      candidates.push({ name:'저중음 악기류 (판별 불확실)', conf:35, icon:'🎵' });
   }
 
-  return instruments.sort((a,b)=>b.conf-a.conf).slice(0,3);
+  // 신뢰도 낮은 항목은 이름에 표시
+  return candidates.slice(0,3).map(c => ({
+    ...c,
+    name: c.conf < 50 ? `${c.name} (추정)` : c.name
+  }));
+}
+
+// 고조파 비율(HNR) — 주기적 신호 강도 측정
+// 높을수록 악기음, 낮을수록 잡음·타악기
+function calcHNR(audioBuffer) {
+  try {
+    const data = audioBuffer.getChannelData(0);
+    const N    = 2048;
+    const start= Math.floor(data.length * 0.2); // 앞부분 노이즈 제외
+    const frame= data.slice(start, start+N);
+
+    // 자기상관
+    let r0 = 0;
+    for (const s of frame) r0 += s*s;
+    if (r0 === 0) return 0;
+
+    // 50~400Hz 범위 주기 탐색
+    const sr = audioBuffer.sampleRate;
+    const minLag = Math.floor(sr/400);
+    const maxLag = Math.floor(sr/50);
+    let maxR = 0;
+    for (let lag=minLag; lag<=maxLag; lag++) {
+      let r=0;
+      for (let i=0; i<N-lag; i++) r+=frame[i]*frame[i+lag];
+      if (r>maxR) maxR=r;
+    }
+    return Math.min(1, maxR/r0);
+  } catch(e) { return 0; }
+}
+
+// 에너지 감쇠율 — 피아노·기타처럼 치고 줄어드는 악기 감지
+// 높을수록 타건·발음 후 빠르게 감쇠
+function calcDecayRate(audioBuffer) {
+  try {
+    const data  = audioBuffer.getChannelData(0);
+    const sr    = audioBuffer.sampleRate;
+    const win   = Math.floor(sr * 0.05); // 50ms 윈도우
+    const frames= Math.floor(data.length / win);
+    if (frames < 4) return 0;
+
+    const energies = [];
+    for (let f=0; f<Math.min(frames,20); f++) {
+      let e=0;
+      for (let i=0; i<win; i++) e+=data[f*win+i]**2;
+      energies.push(Math.sqrt(e/win));
+    }
+
+    // 피크 이후 감쇠 비율 계산
+    const peak = Math.max(...energies);
+    const peakIdx = energies.indexOf(peak);
+    if (peakIdx >= energies.length-2) return 0;
+
+    const afterPeak = energies.slice(peakIdx, Math.min(peakIdx+6, energies.length));
+    if (afterPeak.length < 2) return 0;
+
+    const decayRatio = (afterPeak[0] - afterPeak[afterPeak.length-1]) / (afterPeak[0]+0.0001);
+    return Math.max(0, Math.min(1, decayRatio));
+  } catch(e) { return 0; }
 }
 
 // ══════════════════════════════════════════════════════
@@ -682,7 +807,201 @@ function estimateGenre(bpm, spectrum, instruments, apiGenre) {
 }
 
 // ══════════════════════════════════════════════════════
-//  조성 추정 — 크로마 + Krumhansl 프로파일 매칭
+//  국악 감지 엔진
+//  5음 음계 매칭 + 장단 패턴 + 배음 불규칙성(농현)
+// ══════════════════════════════════════════════════════
+
+// 한국 전통 5음 음계 프로파일 (궁상각치우 + 변궁변치)
+// 평조(C 기준)와 계면조(A 기준) 두 가지
+const GUGAK_PYEONGJO  = [5.0,0.5,3.5,0.5,4.0,0.5,2.5,4.5,0.5,3.5,0.5,2.0]; // 평조
+const GUGAK_GYEMYEON  = [4.5,0.5,2.5,4.5,0.5,3.5,0.5,4.0,0.5,3.5,0.5,2.5]; // 계면조
+
+function detectGugak(audioBuffer, chroma) {
+  if (!audioBuffer || !chroma) return null;
+
+  const result = {
+    isGugak:     false,
+    confidence:  0,
+    mode:        '',      // 평조 / 계면조
+    jangdan:     '',      // 장단 이름
+    instruments: [],      // 추정 국악 악기
+    desc:        '',
+  };
+
+  // ① 5음 음계 매칭
+  const notes      = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const normChroma = [...chroma];
+  const maxC       = Math.max(...normChroma) || 1;
+  for (let i=0;i<12;i++) normChroma[i]/=maxC;
+
+  let bestPyeong=0, bestGyemyeon=0;
+  for (let root=0;root<12;root++){
+    let sp=0,sg=0;
+    for (let i=0;i<12;i++){
+      sp += normChroma[(i+root)%12]*GUGAK_PYEONGJO[i];
+      sg += normChroma[(i+root)%12]*GUGAK_GYEMYEON[i];
+    }
+    if(sp>bestPyeong) bestPyeong=sp;
+    if(sg>bestGyemyeon) bestGyemyeon=sg;
+  }
+
+  // 서양 장·단조 최대 상관과 비교
+  const MAJOR_PROF=[6.35,2.23,3.48,2.33,4.38,4.09,2.52,5.19,2.39,3.66,2.29,2.88];
+  const MINOR_PROF=[6.33,2.68,3.52,5.38,2.60,3.53,2.54,4.75,3.98,2.69,3.34,3.17];
+  let bestWest=0;
+  for (let root=0;root<12;root++){
+    let sm=0,sn=0;
+    for (let i=0;i<12;i++){
+      sm+=normChroma[(i+root)%12]*MAJOR_PROF[i];
+      sn+=normChroma[(i+root)%12]*MINOR_PROF[i];
+    }
+    if(sm>bestWest) bestWest=sm;
+    if(sn>bestWest) bestWest=sn;
+  }
+
+  const gugakScore = Math.max(bestPyeong, bestGyemyeon);
+  const pentatonicRatio = gugakScore / (bestWest + 0.001);
+
+  // ② 배음 불규칙성(농현·시김새) — 가야금·해금 특성
+  const hnr        = calcHNR(audioBuffer);
+  const decayRate  = calcDecayRate(audioBuffer);
+  // 국악 현악기: HNR 중간(0.25~0.55) — 서양보다 불규칙
+  const isGugakString = hnr > 0.2 && hnr < 0.6 && decayRate < 0.3;
+
+  // ③ 대금 특성 — 특정 주파수 잡음 성분
+  const isDaegeum = detectDaeguemNoise(audioBuffer);
+
+  // ④ 장단 패턴 — 12박·9박 감지
+  const jangdan = detectJangdan(audioBuffer);
+
+  // 종합 판단
+  let conf = 0;
+  if (pentatonicRatio > 1.08) conf += 40;
+  else if (pentatonicRatio > 1.03) conf += 20;
+  if (isGugakString) conf += 25;
+  if (isDaegeum)     conf += 30;
+  if (jangdan)       conf += 30;
+
+  if (conf < 25) return null; // 국악 가능성 낮음
+
+  result.isGugak    = true;
+  result.confidence = Math.min(conf, 95);
+  result.mode       = bestPyeong > bestGyemyeon ? '평조(밝고 편안한 선법)' : '계면조(애절하고 슬픈 선법)';
+  result.jangdan    = jangdan || '';
+
+  // 악기 추정
+  if (isDaegeum)     result.instruments.push('대금·소금(목관 국악기)');
+  if (isGugakString) result.instruments.push('가야금·해금·거문고(현악 국악기)');
+  if (jangdan)       result.instruments.push('장구·북(타악 국악기)');
+  if (!result.instruments.length) result.instruments.push('국악기(종류 불명확)');
+
+  result.desc = buildGugakDesc(result);
+  return result;
+}
+
+// 대금 특유의 청(淸) 잡음 감지
+// 대금은 청공 때문에 800~1200Hz 대역에 독특한 잡음 성분이 섞임
+function detectDaeguemNoise(audioBuffer) {
+  try {
+    const data = audioBuffer.getChannelData(0);
+    const sr   = audioBuffer.sampleRate;
+    const N    = 4096;
+    const binHz= sr/N;
+    let청Band=0, totalBand=0;
+
+    const hop = Math.floor(data.length/6);
+    for (let start=0; start+N<data.length; start+=hop){
+      for (let k=0;k<N/2;k++){
+        let re=0,im=0;
+        for (let n=0;n<N;n+=8){
+          const a=-2*Math.PI*k*n/N;
+          re+=data[start+n]*Math.cos(a);
+          im+=data[start+n]*Math.sin(a);
+        }
+        const mag=Math.sqrt(re*re+im*im);
+        const hz=k*binHz;
+        totalBand+=mag;
+        if(hz>=700&&hz<=1300) 청Band+=mag;
+      }
+    }
+    // 800~1200Hz 비율이 전체의 35% 이상이면 대금 가능성
+    return totalBand>0 && (청Band/totalBand)>0.30;
+  } catch(e){ return false; }
+}
+
+// 장단 감지 — 12박·9박·10박 패턴
+function detectJangdan(audioBuffer) {
+  try {
+    const data    = audioBuffer.getChannelData(0);
+    const sr      = audioBuffer.sampleRate;
+    const hopSize = 256;
+    const winSize = 512;
+    const frames  = Math.floor((data.length-winSize)/hopSize);
+    const fps     = sr/hopSize;
+
+    const onset = new Float32Array(frames);
+    let prevE=0;
+    for (let f=0;f<frames;f++){
+      let e=0;
+      for (let i=0;i<winSize;i++) e+=data[f*hopSize+i]**2;
+      e=Math.sqrt(e/winSize);
+      onset[f]=Math.max(0,e-prevE);
+      prevE=e;
+    }
+
+    // 각 장단별 기준 BPM 범위에서 12박·9박 자기상관 확인
+    const corrAt = lag=>{
+      let c=0,n=frames-lag;
+      for(let i=0;i<n;i++) c+=onset[i]*onset[i+lag];
+      return n>0?c/n:0;
+    };
+
+    // 진양조: 매우 느림 (♩=30~50), 12박
+    // 중모리: 보통 (♩=80~100), 12박
+    // 자진모리: 빠름 (♩=120~160), 12박
+    // 세마치: (♩=120~160), 9박
+    // 엇모리: 10박
+
+    const results = [];
+    const bpmList = [35,45,60,75,90,120,140];
+    for (const bpm of bpmList){
+      const beatLag = Math.round(fps*60/bpm);
+      const c12 = corrAt(beatLag*12);
+      const c9  = corrAt(beatLag*9);
+      const c10 = corrAt(beatLag*10);
+      const c4  = corrAt(beatLag*4);
+      if(c12>c4*1.2) results.push({name:jangdanName(bpm,'12'), score:c12});
+      if(c9 >c4*1.2) results.push({name:'세마치장단(9박)', score:c9});
+      if(c10>c4*1.2) results.push({name:'엇모리장단(10박)', score:c10});
+    }
+
+    if(!results.length) return '';
+    results.sort((a,b)=>b.score-a.score);
+    return results[0].name;
+  } catch(e){ return ''; }
+}
+
+function jangdanName(bpm, beats){
+  if(beats==='12'){
+    if(bpm<50)  return '진양조장단(12박, 매우 느림)';
+    if(bpm<80)  return '중모리장단(12박, 보통)';
+    if(bpm<120) return '중중모리장단(12박, 조금 빠름)';
+    return '자진모리장단(12박, 빠름)';
+  }
+  return `${beats}박 장단`;
+}
+
+function buildGugakDesc(r){
+  const parts=[];
+  parts.push(`국악 가능성 ${r.confidence}%`);
+  if(r.mode)      parts.push(r.mode);
+  if(r.jangdan)   parts.push(r.jangdan);
+  if(r.instruments.length) parts.push(r.instruments.join('·')+' 추정');
+  return parts.join(' · ');
+}
+
+// ── 크로마 벡터를 국악 감지에도 활용하기 위해 별도 저장 ──
+let lastChroma = null;
 //  장조·단조 구분 포함
 //  참고: Krumhansl(1990) 조성 프로파일 (공개 학술 데이터)
 // ══════════════════════════════════════════════════════
@@ -725,6 +1044,7 @@ function calcKey(audioBuffer) {
   // 정규화
   const maxC = Math.max(...chroma);
   const normC = chroma.map(v => maxC > 0 ? v / maxC : 0);
+  lastChroma = chroma; // 국악 감지에 활용
 
   // 각 조성별 상관계수 계산
   let bestKey = 'C', bestMode = 'major', bestCorr = -Infinity;
@@ -765,7 +1085,7 @@ function tempoText(bpm) {
 // ══════════════════════════════════════════════════════
 //  해설문 생성
 // ══════════════════════════════════════════════════════
-function buildSentence(bpm, meter, keyId, mood, genre, instruments, spectrum) {
+function buildSentence(bpm, meter, keyId, mood, genre, instruments, spectrum, gugak) {
   const tempo   = tempoText(bpm);
   const keyInfo = KEY_KO[keyId];
   const instStr = instruments.slice(0,2).map(i=>i.name).join('·');
@@ -784,6 +1104,11 @@ function buildSentence(bpm, meter, keyId, mood, genre, instruments, spectrum) {
     if      (spectrum.centroid>3000) parts.push('음색이 밝고 선명함');
     else if (spectrum.centroid>1500) parts.push('음색이 따뜻하고 중후함');
     else                              parts.push('음색이 부드럽고 낮은 편');
+  }
+
+  // 국악 감지 결과
+  if (gugak && gugak.isGugak) {
+    parts.push(`\n\n🎶 국악 감지 — ${gugak.desc}`);
   }
 
   if (!parts.length) return '소리가 충분하지 않아 분석하기 어렵습니다.\n볼륨을 높이고 스피커에 가까이 대고 다시 시도해 보세요.';
@@ -949,7 +1274,7 @@ async function processAudio(){
   const keyMode  = keyResult.mode;
   const keyId    = keyNote !== '—' ? `${keyNote}_${keyMode}` : '—';
   const spectrum = audioBuffer ? analyzeSpectrum(audioBuffer): {centroid:0,rolloff:0,zcr:0,rms:0};
-  const instruments = estimateInstruments(spectrum, bpm);
+  const instruments = estimateInstruments(spectrum, bpm, audioBuffer);
   const tempo    = tempoText(bpm);
   const mood     = estimateMood(bpm, spectrum);
 
@@ -958,7 +1283,12 @@ async function processAudio(){
   const apiResult=await callAudD(blob);
   const apiGenre=apiResult?.spotify?.album?.genres?.[0]||apiResult?.apple_music?.genreNames?.[0]||null;
   const genre=estimateGenre(bpm,spectrum,instruments,apiGenre);
-  const sentence=buildSentence(bpm,meter,keyId,mood,genre,instruments,spectrum);
+
+  // 국악 감지
+  setStatus('국악 패턴 분석 중…','active');
+  const gugak = detectGugak(audioBuffer, lastChroma);
+
+  const sentence=buildSentence(bpm,meter,keyId,mood,genre,instruments,spectrum,gugak);
   const analysis={mood,genre,instruments,bpm,meter};
 
   // 그리드 항목
