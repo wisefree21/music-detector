@@ -283,18 +283,30 @@ const RECORD_SEC = 10; // 10초로 확대
 //  조성 한국어 설명
 // ══════════════════════════════════════════════════════
 const KEY_KO = {
-  'C' :{ name:'다장조(C)',  feel:'밝고 순수한 느낌' },
-  'C#':{ name:'올림다장조(C#)', feel:'날카롭고 강렬한 느낌' },
-  'D' :{ name:'라장조(D)',  feel:'따뜻하고 당당한 느낌' },
-  'D#':{ name:'올림라장조(D#)', feel:'신비롭고 어두운 느낌' },
-  'E' :{ name:'마장조(E)',  feel:'생기있고 활기찬 느낌' },
-  'F' :{ name:'바장조(F)',  feel:'부드럽고 서정적인 느낌' },
-  'F#':{ name:'올림바장조(F#)', feel:'몽환적이고 풍부한 느낌' },
-  'G' :{ name:'사장조(G)',  feel:'따뜻하고 친근한 느낌' },
-  'G#':{ name:'올림사장조(G#)', feel:'신비롭고 독특한 느낌' },
-  'A' :{ name:'가장조(A)',  feel:'밝고 편안한 느낌' },
-  'A#':{ name:'올림가장조(A#)', feel:'화려하고 풍성한 느낌' },
-  'B' :{ name:'나장조(B)',  feel:'서정적이고 섬세한 느낌' },
+  'C_major' :{ name:'다장조(C장조)',      feel:'밝고 순수한 느낌. 베토벤·모차르트가 즐겨 쓴 조성' },
+  'C#_major':{ name:'올림다장조(C#장조)', feel:'날카롭고 강렬한 느낌' },
+  'D_major' :{ name:'라장조(D장조)',      feel:'따뜻하고 당당한 느낌. 바이올린 협주곡에 자주 쓰임' },
+  'D#_major':{ name:'올림라장조(D#장조)', feel:'신비롭고 풍성한 느낌' },
+  'E_major' :{ name:'마장조(E장조)',      feel:'생기있고 활기찬 느낌' },
+  'F_major' :{ name:'바장조(F장조)',      feel:'부드럽고 서정적인 느낌' },
+  'F#_major':{ name:'올림바장조(F#장조)', feel:'몽환적이고 풍부한 느낌' },
+  'G_major' :{ name:'사장조(G장조)',      feel:'따뜻하고 친근한 느낌. 민요·가요에 흔함' },
+  'G#_major':{ name:'올림사장조(G#장조)', feel:'신비롭고 독특한 느낌' },
+  'A_major' :{ name:'가장조(A장조)',      feel:'밝고 편안한 느낌. 기타 음악에 자주 쓰임' },
+  'A#_major':{ name:'올림가장조(A#장조)', feel:'화려하고 풍성한 느낌' },
+  'B_major' :{ name:'나장조(B장조)',      feel:'서정적이고 섬세한 느낌' },
+  'C_minor' :{ name:'다단조(C단조)',      feel:'어둡고 비장한 느낌. 베토벤 운명 교향곡 조성' },
+  'C#_minor':{ name:'올림다단조(C#단조)', feel:'우울하고 신비로운 느낌' },
+  'D_minor' :{ name:'라단조(D단조)',      feel:'슬프고 진지한 느낌. 모차르트가 즐겨 쓴 조성' },
+  'D#_minor':{ name:'올림라단조(D#단조)', feel:'어둡고 무거운 느낌' },
+  'E_minor' :{ name:'마단조(E단조)',      feel:'서정적이고 우수에 찬 느낌' },
+  'F_minor' :{ name:'바단조(F단조)',      feel:'비장하고 열정적인 느낌' },
+  'F#_minor':{ name:'올림바단조(F#단조)', feel:'어둡고 낭만적인 느낌' },
+  'G_minor' :{ name:'사단조(G단조)',      feel:'슬프고 우아한 느낌' },
+  'G#_minor':{ name:'올림사단조(G#단조)', feel:'신비롭고 어두운 느낌' },
+  'A_minor' :{ name:'가단조(A단조)',      feel:'슬프고 서정적인 느낌. 가장 자연스러운 단조' },
+  'A#_minor':{ name:'올림가단조(A#단조)', feel:'어둡고 긴장감 있는 느낌' },
+  'B_minor' :{ name:'나단조(B단조)',      feel:'우수에 차고 고독한 느낌' },
 };
 
 // ══════════════════════════════════════════════════════
@@ -359,16 +371,54 @@ function calcBPM(audioBuffer) {
 }
 
 // ══════════════════════════════════════════════════════
-//  MIR 엔진 2 — 박자 추정 (비트 간격 분산 분석)
+//  MIR 엔진 2 — 박자 추정 (BPM 범위 + 음악 관습 기반)
+//  반환: { sign, name, desc } 구조
 // ══════════════════════════════════════════════════════
 function estimateMeter(bpm) {
-  if (!bpm) return '—';
-  // 3박자 영역: 60~80 BPM (왈츠 기준)
-  // 6/8박자 영역: 50~70 BPM
-  if (bpm >= 55 && bpm <= 82) return '3박자';
-  if (bpm > 82  && bpm < 185) return '4박자';
-  if (bpm >= 185)              return '2박자';
-  return '—';
+  if (!bpm) return { sign:'—', name:'—', desc:'' };
+
+  // 2/4박자: 행진곡·빠른 클래식·폴카 (100~185 BPM)
+  // 행진곡 기준 120 BPM 전후, 빠른 협주곡 130~170 BPM
+  if (bpm >= 100 && bpm < 185)
+    return {
+      sign: '2/4박자',
+      name: '2박자',
+      desc: '한 마디에 두 박자. 행진곡·폴카·빠른 클래식 협주곡에 많습니다.'
+    };
+
+  // 6/8박자: 느린 6/8 (48~72 BPM) — 바로크·켈틱
+  if (bpm >= 48 && bpm < 72)
+    return {
+      sign: '6/8박자',
+      name: '6박자',
+      desc: '한 마디에 여섯 박자, 셋씩 두 묶음. 바로크·켈틱·발라드에 많습니다.'
+    };
+
+  // 3/4박자: 왈츠 영역 (72~100 BPM)
+  if (bpm >= 72 && bpm < 100)
+    return {
+      sign: '3/4박자',
+      name: '3박자',
+      desc: '한 마디에 세 박자. 왈츠·미뉴에트·볼레로에 많습니다.'
+    };
+
+  // 4/4박자: 보통 팝·록·느린 곡 (40~72 BPM 느린 4/4)
+  if (bpm >= 40 && bpm < 72)
+    return {
+      sign: '4/4박자',
+      name: '4박자',
+      desc: '한 마디에 네 박자. 가장 흔한 박자입니다.'
+    };
+
+  // 매우 빠른 경우
+  if (bpm >= 185)
+    return {
+      sign: '2/4박자',
+      name: '2박자',
+      desc: '매우 빠른 2박자. 프레스토 행진곡·타란텔라 계열입니다.'
+    };
+
+  return { sign:'4/4박자', name:'4박자', desc:'한 마디에 네 박자.' };
 }
 
 // ══════════════════════════════════════════════════════
@@ -583,34 +633,69 @@ function estimateGenre(bpm, spectrum, instruments, apiGenre) {
 }
 
 // ══════════════════════════════════════════════════════
-//  조성 추정 — 크로마 + 프로파일 매칭
+//  조성 추정 — 크로마 + Krumhansl 프로파일 매칭
+//  장조·단조 구분 포함
+//  참고: Krumhansl(1990) 조성 프로파일 (공개 학술 데이터)
 // ══════════════════════════════════════════════════════
 function calcKey(audioBuffer) {
   const data  = audioBuffer.getChannelData(0);
   const sr    = audioBuffer.sampleRate;
   const notes = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-  const chroma= new Array(12).fill(0);
-  const N     = 4096;
-  const binHz = sr / N;
-  const hop   = Math.floor(data.length / 8);
 
-  for (let start=0; start+N<data.length; start+=hop) {
-    for (let k=1; k<N/2; k++) {
-      let re=0, im=0;
-      for (let n=0; n<N; n+=4) { // 간격을 두어 속도 확보
-        const a=-2*Math.PI*k*n/N;
-        re+=data[start+n]*Math.cos(a);
-        im+=data[start+n]*Math.sin(a);
+  // Krumhansl 장조 프로파일
+  const majorProfile = [6.35,2.23,3.48,2.33,4.38,4.09,2.52,5.19,2.39,3.66,2.29,2.88];
+  // Krumhansl 단조 프로파일
+  const minorProfile = [6.33,2.68,3.52,5.38,2.60,3.53,2.54,4.75,3.98,2.69,3.34,3.17];
+
+  const chroma = new Array(12).fill(0);
+  const N      = 4096;
+  const binHz  = sr / N;
+  const hop    = Math.floor(data.length / 10);
+  let   count  = 0;
+
+  for (let start = 0; start + N < data.length; start += hop) {
+    for (let k = 1; k < N / 2; k++) {
+      const hz = k * binHz;
+      if (hz < 65 || hz > 2100) continue;
+      let re = 0, im = 0;
+      // 4씩 건너뛰어 속도 확보
+      for (let n = 0; n < N; n += 4) {
+        const a = -2 * Math.PI * k * n / N;
+        re += data[start + n] * Math.cos(a);
+        im += data[start + n] * Math.sin(a);
       }
-      const hz=k*binHz;
-      if (hz<80||hz>2000) continue;
-      const mag=Math.sqrt(re*re+im*im);
-      const midi=12*Math.log2(hz/440)+69;
-      const n2=((Math.round(midi)%12)+12)%12;
-      chroma[n2]+=mag;
+      const mag  = Math.sqrt(re * re + im * im);
+      const midi = 12 * Math.log2(hz / 440) + 69;
+      const n2   = ((Math.round(midi) % 12) + 12) % 12;
+      chroma[n2] += mag;
     }
+    count++;
+    if (count >= 6) break;
   }
-  return notes[chroma.indexOf(Math.max(...chroma))];
+
+  // 정규화
+  const maxC = Math.max(...chroma);
+  const normC = chroma.map(v => maxC > 0 ? v / maxC : 0);
+
+  // 각 조성별 상관계수 계산
+  let bestKey = 'C', bestMode = 'major', bestCorr = -Infinity;
+
+  for (let root = 0; root < 12; root++) {
+    // 장조 상관
+    let corrMaj = 0;
+    for (let i = 0; i < 12; i++)
+      corrMaj += normC[(i + root) % 12] * majorProfile[i];
+
+    // 단조 상관
+    let corrMin = 0;
+    for (let i = 0; i < 12; i++)
+      corrMin += normC[(i + root) % 12] * minorProfile[i];
+
+    if (corrMaj > bestCorr) { bestCorr = corrMaj; bestKey = notes[root]; bestMode = 'major'; }
+    if (corrMin > bestCorr) { bestCorr = corrMin; bestKey = notes[root]; bestMode = 'minor'; }
+  }
+
+  return { key: bestKey, mode: bestMode };
 }
 
 // ══════════════════════════════════════════════════════
@@ -631,9 +716,9 @@ function tempoText(bpm) {
 // ══════════════════════════════════════════════════════
 //  해설문 생성
 // ══════════════════════════════════════════════════════
-function buildSentence(bpm, meter, keyNote, mood, genre, instruments, spectrum) {
+function buildSentence(bpm, meter, keyId, mood, genre, instruments, spectrum) {
   const tempo   = tempoText(bpm);
-  const keyInfo = KEY_KO[keyNote];
+  const keyInfo = KEY_KO[keyId];
   const instStr = instruments.slice(0,2).map(i=>i.name).join('·');
 
   const parts=[];
@@ -642,7 +727,9 @@ function buildSentence(bpm, meter, keyNote, mood, genre, instruments, spectrum) 
   if (genre)   parts.push(`${genre} 계열`);
   if (mood && mood!=='분석 어려움') parts.push(`${mood} 분위기`);
   if (bpm)     parts.push(`${tempo.speed} 빠르기 — ${tempo.desc} (${bpm} BPM)`);
-  if (meter&&meter!=='—') parts.push(`${meter} 리듬`);
+  if (meter && meter.sign!=='—') {
+    parts.push(`${meter.sign} (${meter.name}) — ${meter.desc}`);
+  }
   if (keyInfo) parts.push(`${keyInfo.name} — ${keyInfo.feel}`);
   if (spectrum.centroid>0) {
     if      (spectrum.centroid>3000) parts.push('음색이 밝고 선명함');
@@ -665,8 +752,8 @@ function renderTags(id, { mood, genre, instruments, bpm, meter }) {
   if (mood&&mood!=='분석 어려움') html+=`<span class="stag stag-mood">😊 ${mood}</span>`;
   if (genre) html+=`<span class="stag stag-genre">🎼 ${genre}</span>`;
   instruments.slice(0,2).forEach(i=>html+=`<span class="stag stag-inst">${i.icon} ${i.name}</span>`);
-  if (bpm)   html+=`<span class="stag stag-tempo">⏱ ${tempo.speed}</span>`;
-  if (meter&&meter!=='—') html+=`<span class="stag stag-tempo">${meter}</span>`;
+  if (bpm)   html+=`<span class="stag stag-tempo">⏱ ${tempo.speed} (${bpm} BPM)</span>`;
+  if (meter&&meter.sign!=='—') html+=`<span class="stag stag-tempo">${meter.sign}</span>`;
   el.innerHTML=html;
 }
 
@@ -806,9 +893,12 @@ async function processAudio(){
 
   // MIR 분석
   setStatus('BPM·박자 분석 중…','active');
-  const bpm      = audioBuffer ? calcBPM(audioBuffer)       : null;
+  const bpm      = audioBuffer ? calcBPM(audioBuffer)        : null;
   const meter    = estimateMeter(bpm);
-  const keyNote  = audioBuffer ? calcKey(audioBuffer)       : '—';
+  const keyResult= audioBuffer ? calcKey(audioBuffer)        : { key:'—', mode:'major' };
+  const keyNote  = keyResult.key;
+  const keyMode  = keyResult.mode;
+  const keyId    = keyNote !== '—' ? `${keyNote}_${keyMode}` : '—';
   const spectrum = audioBuffer ? analyzeSpectrum(audioBuffer): {centroid:0,rolloff:0,zcr:0,rms:0};
   const instruments = estimateInstruments(spectrum, bpm);
   const tempo    = tempoText(bpm);
@@ -819,25 +909,28 @@ async function processAudio(){
   const apiResult=await callAudD(blob);
   const apiGenre=apiResult?.spotify?.album?.genres?.[0]||apiResult?.apple_music?.genreNames?.[0]||null;
   const genre=estimateGenre(bpm,spectrum,instruments,apiGenre);
-  const sentence=buildSentence(bpm,meter,keyNote,mood,genre,instruments,spectrum);
+  const sentence=buildSentence(bpm,meter,keyId,mood,genre,instruments,spectrum);
   const analysis={mood,genre,instruments,bpm,meter};
 
   // 그리드 항목
-  const keyInfo=KEY_KO[keyNote];
+  const keyInfo=KEY_KO[keyId];
   const gridItems=[
-    { label:'악기 추정',    value:instruments[0]?.icon+' '+instruments[0]?.name||'—',
-      sub: instruments[1]? instruments[1].icon+' '+instruments[1].name : '' },
-    { label:'분위기',       value:mood||'—', sub:'' },
-    { label:'빠르기',       value:tempo.speed||'—', sub:tempo.desc },
-    { label:'조성',         value:keyInfo?.name||keyNote||'—', sub:keyInfo?.feel||'' },
+    { label:'악기 추정',
+      value:(instruments[0]?.icon||'')+(instruments[0]?.name||'—'),
+      sub: instruments[1]? (instruments[1].icon||'')+instruments[1].name : '' },
+    { label:'분위기',  value:mood||'—', sub:'' },
+    { label:'빠르기',  value:tempo.speed||'—', sub:tempo.desc },
+    { label:'조성',
+      value: keyInfo?.name || (keyNote!=='—'? keyNote+(keyMode==='minor'?'단조':'장조') : '—'),
+      sub:   keyInfo?.feel || '' },
   ];
 
   // 버튼 초기화
   recordBtn.classList.remove('analyzing');
   btnIcon.textContent='🎵'; btnLabel.textContent='다시 시작';
 
-  if(apiResult) showResult(apiResult,bpm,meter,keyNote,tempo,analysis,sentence,gridItems);
-  else          showNoResult(bpm,meter,keyNote,tempo,analysis,sentence,gridItems);
+  if(apiResult) showResult(apiResult,bpm,meter,keyId,tempo,analysis,sentence,gridItems);
+  else          showNoResult(bpm,meter,keyId,tempo,analysis,sentence,gridItems);
 
   saveHistory({
     time:new Date().toLocaleString('ko-KR'),
@@ -894,15 +987,15 @@ async function retryAudD(){
   }
 }
 
-function showResult(r,bpm,meter,key,tempo,analysis,sentence,gridItems){
+function showResult(r,bpm,meter,keyId,tempo,analysis,sentence,gridItems){
   setStatus('분석 완료!','ok');
   renderTags('styleTags',analysis);
   renderGrid('analysisGrid',gridItems);
   document.getElementById('styleSentence').textContent=sentence;
   document.getElementById('bpmVal').textContent  = bpm ? `${bpm} BPM` : '—';
-  document.getElementById('beatVal').textContent = meter||'—';
-  const ki=KEY_KO[key];
-  document.getElementById('keyVal').textContent  = ki ? ki.name : (key!=='—'?key:'—');
+  document.getElementById('beatVal').textContent = meter?.sign||'—';
+  const ki=KEY_KO[keyId];
+  document.getElementById('keyVal').textContent  = ki ? ki.name : (keyId!=='—'?keyId:'—');
 
   const art=r.spotify?.album?.images?.[0]?.url||r.apple_music?.artwork?.url?.replace('{w}','80').replace('{h}','80')||null;
   const ae=document.getElementById('albumEl');
@@ -923,15 +1016,15 @@ function showResult(r,bpm,meter,key,tempo,analysis,sentence,gridItems){
   retryBtn.classList.remove('on');
 }
 
-function showNoResult(bpm,meter,key,tempo,analysis,sentence,gridItems){
+function showNoResult(bpm,meter,keyId,tempo,analysis,sentence,gridItems){
   setStatus('곡명을 찾지 못했습니다. 스타일 분석 결과입니다.','err');
   renderTags('styleTags2',analysis);
   renderGrid('analysisGrid2',gridItems);
   document.getElementById('styleSentence2').textContent=sentence;
   document.getElementById('bpmVal2').textContent  = bpm ? `${bpm} BPM` : '—';
-  document.getElementById('beatVal2').textContent = meter||'—';
-  const ki=KEY_KO[key];
-  document.getElementById('keyVal2').textContent  = ki ? ki.name : (key!=='—'?key:'—');
+  document.getElementById('beatVal2').textContent = meter?.sign||'—';
+  const ki=KEY_KO[keyId];
+  document.getElementById('keyVal2').textContent  = ki ? ki.name : (keyId!=='—'?keyId:'—');
   document.getElementById('noMatch').classList.add('on');
   retryBtn.classList.add('on');
 }
