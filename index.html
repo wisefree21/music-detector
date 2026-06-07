@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>음악 감별기 v5</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700;900&family=Space+Mono:wght@400;700&display=swap');
+:root{
+  --bg:#0c0c12;--surface:#14141e;--surface2:#1c1c2a;--border:#2a2a3e;
+  --accent:#8b7cf8;--accent2:#f8a96a;--accent3:#6af8b0;
+  --text:#e8e8f4;--muted:#7070a0;--danger:#f87070;--glow:rgba(139,124,248,0.2);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+body{background:var(--bg);color:var(--text);font-family:'Noto Serif KR',serif;
+  min-height:100vh;display:flex;flex-direction:column;align-items:center;
+  padding-bottom:60px;overflow-x:hidden;}
+
+.tab-nav{width:100%;display:flex;border-bottom:1px solid var(--border);
+  background:var(--surface);position:sticky;top:0;z-index:100;}
+.tab-btn{flex:1;padding:13px 6px;background:none;border:none;color:var(--muted);
+  font-family:'Space Mono',monospace;font-size:.58rem;letter-spacing:.07em;
+  text-transform:uppercase;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);}
+.tab-panel{display:none;width:100%;max-width:480px;padding:20px 16px 0;}
+.tab-panel.active{display:flex;flex-direction:column;gap:15px;}
+
+header{width:100%;padding:18px 16px 13px;text-align:center;position:relative;}
+header::after{content:'';position:absolute;bottom:0;left:8%;right:8%;height:1px;
+  background:linear-gradient(90deg,transparent,var(--accent),transparent);}
+h1{font-size:1.45rem;font-weight:900;
+  background:linear-gradient(135deg,#fff 20%,var(--accent));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.subtitle{font-family:'Space Mono',monospace;font-size:.55rem;color:var(--muted);
+  margin-top:5px;letter-spacing:.12em;text-transform:uppercase;}
+
+/* 녹음 */
+.record-zone{display:flex;flex-direction:column;align-items:center;gap:13px;}
+.record-btn{width:120px;height:120px;border-radius:50%;border:2px solid var(--accent);
+  background:var(--surface);cursor:pointer;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:7px;transition:all .3s;
+  box-shadow:0 0 26px var(--glow);outline:none;}
+.record-btn.recording{border-color:var(--danger);box-shadow:0 0 38px rgba(248,112,112,.4);animation:pulse 1.5s infinite;}
+.record-btn.analyzing{border-color:var(--accent2);box-shadow:0 0 38px rgba(248,169,106,.4);animation:rglow 1.2s linear infinite;}
+@keyframes pulse{0%,100%{transform:scale(1);}50%{transform:scale(1.04);}}
+@keyframes rglow{
+  0%  {box-shadow:0 0 38px rgba(248,169,106,.3), 5px 0 18px rgba(248,169,106,.5);}
+  25% {box-shadow:0 0 38px rgba(248,169,106,.3), 0 5px 18px rgba(248,169,106,.5);}
+  50% {box-shadow:0 0 38px rgba(248,169,106,.3),-5px 0 18px rgba(248,169,106,.5);}
+  75% {box-shadow:0 0 38px rgba(248,169,124,.3), 0 -5px 18px rgba(248,169,106,.5);}
+  100%{box-shadow:0 0 38px rgba(248,169,106,.3), 5px 0 18px rgba(248,169,106,.5);}
+}
+.btn-icon{font-size:2.2rem;}
+.btn-label{font-family:'Space Mono',monospace;font-size:.54rem;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.1em;}
+.record-btn.recording .btn-label{color:var(--danger);}
+.record-btn.analyzing .btn-label{color:var(--accent2);}
+
+.viz-wrap{width:100%;height:50px;background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;overflow:hidden;}
+#visualizer{width:100%;height:100%;display:block;}
+.timer-bar{width:100%;height:4px;background:var(--border);border-radius:2px;overflow:hidden;display:none;}
+.timer-bar.on{display:block;}
+.timer-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--danger));
+  border-radius:2px;transition:width .1s linear;}
+.timer-count{font-family:'Space Mono',monospace;font-size:.65rem;color:var(--accent2);
+  text-align:center;display:none;}
+.timer-count.on{display:block;}
+
+.status-msg{font-family:'Space Mono',monospace;font-size:.68rem;color:var(--muted);
+  text-align:center;letter-spacing:.05em;min-height:1.4em;}
+.status-msg.active{color:var(--accent2);}
+.status-msg.ok    {color:var(--accent3);}
+.status-msg.err   {color:var(--danger);}
+
+/* 재시도 버튼 */
+.retry-btn{display:none;margin:0 auto;padding:8px 20px;
+  background:rgba(139,124,248,.15);border:1px solid rgba(139,124,248,.4);
+  border-radius:20px;color:var(--accent);font-family:'Space Mono',monospace;
+  font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;}
+.retry-btn.on{display:block;}
+
+/* 결과 카드 */
+.r-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;
+  overflow:hidden;display:none;animation:sup .4s ease;}
+.r-card.on{display:block;}
+@keyframes sup{from{opacity:0;transform:translateY(13px);}to{opacity:1;transform:translateY(0);}}
+
+/* 분석 배너 */
+.ai-banner{padding:16px 16px 14px;
+  background:linear-gradient(135deg,rgba(139,124,248,.1),rgba(248,169,106,.07));
+  border-bottom:1px solid var(--border);}
+.ai-lbl{font-family:'Space Mono',monospace;font-size:.5rem;color:var(--accent);
+  text-transform:uppercase;letter-spacing:.14em;margin-bottom:9px;display:flex;
+  align-items:center;gap:6px;}
+.ai-badge{background:rgba(139,124,248,.25);color:var(--accent);
+  border:1px solid rgba(139,124,248,.4);font-size:.46rem;padding:2px 7px;
+  border-radius:10px;letter-spacing:.08em;}
+
+/* 태그 */
+.style-tags{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:11px;}
+.stag{font-family:'Space Mono',monospace;font-size:.6rem;padding:4px 11px;border-radius:18px;letter-spacing:.04em;}
+.stag-mood  {background:rgba(139,124,248,.2); color:var(--accent); border:1px solid rgba(139,124,248,.4);}
+.stag-genre {background:rgba(248,169,106,.15);color:var(--accent2);border:1px solid rgba(248,169,106,.3);}
+.stag-inst  {background:rgba(106,248,176,.14);color:var(--accent3);border:1px solid rgba(106,248,176,.3);}
+.stag-tempo {background:rgba(248,112,112,.12);color:var(--danger); border:1px solid rgba(248,112,112,.25);}
+
+/* 분석 항목 상세 */
+.analysis-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
+.ag-item{background:var(--surface2);border-radius:10px;padding:10px 12px;}
+.ag-lbl{font-family:'Space Mono',monospace;font-size:.48rem;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px;}
+.ag-val{font-size:.88rem;font-weight:700;color:var(--text);line-height:1.35;}
+.ag-sub{font-size:.68rem;color:var(--muted);margin-top:2px;line-height:1.4;}
+
+.style-sentence{font-size:.9rem;line-height:1.88;color:var(--text);}
+
+/* 수치 행 */
+.audio-row{display:grid;grid-template-columns:repeat(3,1fr);padding:13px 16px;
+  border-bottom:1px solid var(--border);gap:6px;}
+.aud-item{display:flex;flex-direction:column;align-items:center;gap:3px;}
+.aud-val{font-family:'Space Mono',monospace;font-size:.82rem;font-weight:700;color:var(--accent);}
+.aud-lbl{font-family:'Space Mono',monospace;font-size:.46rem;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.06em;text-align:center;}
+
+/* 곡 정보 */
+.song-header{padding:13px 16px;border-bottom:1px solid var(--border);
+  display:flex;gap:11px;align-items:flex-start;}
+.album-art{width:60px;height:60px;border-radius:9px;object-fit:cover;flex-shrink:0;
+  border:1px solid var(--border);}
+.album-ph{width:60px;height:60px;border-radius:9px;background:var(--surface2);
+  flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:1.6rem;}
+.song-meta{flex:1;min-width:0;}
+.song-title {font-size:.96rem;font-weight:700;color:#fff;line-height:1.3;word-break:break-word;}
+.song-artist{font-size:.78rem;color:var(--accent);margin-top:2px;}
+.song-album {font-size:.68rem;color:var(--muted);margin-top:2px;}
+
+/* 스트리밍 */
+.stream-row{padding:11px 16px;display:flex;gap:7px;flex-wrap:wrap;}
+.s-btn{font-family:'Space Mono',monospace;font-size:.56rem;padding:5px 12px;border-radius:18px;
+  text-decoration:none;letter-spacing:.04em;text-transform:uppercase;
+  display:inline-flex;align-items:center;gap:4px;}
+.s-spotify{background:rgba(30,215,96,.13);color:#1ed760;border:1px solid rgba(30,215,96,.28);}
+.s-apple  {background:rgba(252,60,68,.12); color:#fc3c44;border:1px solid rgba(252,60,68,.28);}
+.s-youtube{background:rgba(255,60,60,.11); color:#ff5555;border:1px solid rgba(255,60,60,.22);}
+
+/* 미인식 헤더 */
+.nm-head{padding:14px 16px;border-bottom:1px solid var(--border);
+  display:flex;gap:10px;align-items:center;}
+.nm-head .icon{font-size:1.7rem;}
+.nm-head h3{font-size:.92rem;color:var(--text);margin-bottom:2px;}
+.nm-head p {font-size:.7rem;color:var(--muted);line-height:1.5;}
+
+/* 기록 탭 */
+.history-empty{text-align:center;padding:38px 18px;color:var(--muted);font-size:.78rem;line-height:1.8;}
+.history-list{display:flex;flex-direction:column;gap:9px;}
+.history-item{background:var(--surface);border:1px solid var(--border);border-radius:11px;
+  padding:13px 15px;display:flex;flex-direction:column;gap:7px;animation:sup .3s ease;}
+.hi-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+.hi-title {font-size:.88rem;font-weight:700;color:#fff;}
+.hi-artist{font-size:.73rem;color:var(--accent);}
+.hi-time  {font-family:'Space Mono',monospace;font-size:.5rem;color:var(--muted);white-space:nowrap;margin-top:2px;}
+.hi-tags  {display:flex;flex-wrap:wrap;gap:4px;}
+.hi-sent  {font-size:.73rem;color:var(--muted);line-height:1.6;}
+.clear-btn{width:100%;padding:9px;background:rgba(248,112,112,.1);
+  border:1px solid rgba(248,112,112,.25);border-radius:9px;color:var(--danger);
+  font-family:'Space Mono',monospace;font-size:.58rem;letter-spacing:.1em;
+  text-transform:uppercase;cursor:pointer;margin-top:4px;}
+.help{font-size:.68rem;color:var(--muted);text-align:center;line-height:1.8;}
+footer{margin-top:34px;font-family:'Space Mono',monospace;font-size:.48rem;
+  color:var(--border);letter-spacing:.1em;text-transform:uppercase;text-align:center;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>음악 감별기</h1>
+  <p class="subtitle">Music Style Detector v5 · MIR 분석</p>
+</header>
+
+<nav class="tab-nav">
+  <button class="tab-btn active" onclick="switchTab('detect',this)">🎵 감별</button>
+  <button class="tab-btn" onclick="switchTab('history',this)">📋 기록</button>
+</nav>
+
+<div class="tab-panel active" id="tab-detect">
+  <div class="record-zone">
+    <button class="record-btn" id="recordBtn" onclick="toggleRecord()">
+      <span class="btn-icon" id="btnIcon">🎵</span>
+      <span class="btn-label" id="btnLabel">눌러서 시작</span>
+    </button>
+    <div class="viz-wrap"><canvas id="visualizer"></canvas></div>
+    <div class="timer-bar" id="timerBar">
+      <div class="timer-fill" id="timerFill"></div>
+    </div>
+    <div class="timer-count" id="timerCount">10</div>
+    <p class="status-msg" id="statusMsg">음악을 틀고 버튼을 누르세요</p>
+    <button class="retry-btn" id="retryBtn" onclick="retryAudD()">🔄 곡명 재검색</button>
+  </div>
+
+  <!-- 인식 성공 -->
+  <div class="r-card" id="resultCard">
+    <div class="ai-banner">
+      <div class="ai-lbl">🎵 음악 스타일 분석 <span class="ai-badge">MIR 엔진</span></div>
+      <div class="style-tags" id="styleTags"></div>
+      <div class="analysis-grid" id="analysisGrid"></div>
+      <p class="style-sentence" id="styleSentence"></p>
+    </div>
+    <div class="audio-row">
+      <div class="aud-item">
+        <span class="aud-val" id="bpmVal">—</span>
+        <span class="aud-lbl">빠르기(BPM)</span>
+      </div>
+      <div class="aud-item">
+        <span class="aud-val" id="beatVal">—</span>
+        <span class="aud-lbl">박자</span>
+      </div>
+      <div class="aud-item">
+        <span class="aud-val" id="keyVal">—</span>
+        <span class="aud-lbl">조성</span>
+      </div>
+    </div>
+    <div class="song-header">
+      <div class="album-ph" id="albumEl">🎵</div>
+      <div class="song-meta">
+        <div class="song-title"  id="songTitle">—</div>
+        <div class="song-artist" id="songArtist">—</div>
+        <div class="song-album"  id="songAlbum">—</div>
+      </div>
+    </div>
+    <div class="stream-row" id="streamRow"></div>
+  </div>
+
+  <!-- 미인식 -->
+  <div class="r-card" id="noMatch">
+    <div class="nm-head">
+      <span class="icon">🎧</span>
+      <div>
+        <h3>곡명은 찾지 못했습니다</h3>
+        <p>볼륨을 높이고 '곡명 재검색'을 눌러 보세요.</p>
+      </div>
+    </div>
+    <div class="ai-banner" style="border-bottom:none;">
+      <div class="ai-lbl">🎵 음악 스타일 분석 <span class="ai-badge">MIR 엔진</span></div>
+      <div class="style-tags" id="styleTags2"></div>
+      <div class="analysis-grid" id="analysisGrid2"></div>
+      <p class="style-sentence" id="styleSentence2"></p>
+    </div>
+    <div class="audio-row">
+      <div class="aud-item">
+        <span class="aud-val" id="bpmVal2">—</span>
+        <span class="aud-lbl">빠르기(BPM)</span>
+      </div>
+      <div class="aud-item">
+        <span class="aud-val" id="beatVal2">—</span>
+        <span class="aud-lbl">박자</span>
+      </div>
+      <div class="aud-item">
+        <span class="aud-val" id="keyVal2">—</span>
+        <span class="aud-lbl">조성</span>
+      </div>
+    </div>
+  </div>
+
+  <p class="help">버튼을 누르면 10초간 소리를 듣습니다.<br>
+  음악이 흘러나오는 상태에서, <strong>스피커 가까이</strong> 대고 눌러 주세요.</p>
+</div>
+
+<div class="tab-panel" id="tab-history">
+  <div id="historyContent"></div>
+</div>
+
+<footer>© 2025 음악 감별기 v5 · MIR 분석 엔진 · AudD API</footer>
+
+<script>
+// ══════════════════════════════════════════════════════
+//  설정
+// ══════════════════════════════════════════════════════
+const API_TOKEN  = 'a965cb44dec92e79169400e63057eb14';
+const RECORD_SEC = 10; // 10초로 확대
+
+// ══════════════════════════════════════════════════════
+//  조성 한국어 설명
+// ══════════════════════════════════════════════════════
+const KEY_KO = {
+  'C' :{ name:'다장조(C)',  feel:'밝고 순수한 느낌' },
+  'C#':{ name:'올림다장조(C#)', feel:'날카롭고 강렬한 느낌' },
+  'D' :{ name:'라장조(D)',  feel:'따뜻하고 당당한 느낌' },
+  'D#':{ name:'올림라장조(D#)', feel:'신비롭고 어두운 느낌' },
+  'E' :{ name:'마장조(E)',  feel:'생기있고 활기찬 느낌' },
+  'F' :{ name:'바장조(F)',  feel:'부드럽고 서정적인 느낌' },
+  'F#':{ name:'올림바장조(F#)', feel:'몽환적이고 풍부한 느낌' },
+  'G' :{ name:'사장조(G)',  feel:'따뜻하고 친근한 느낌' },
+  'G#':{ name:'올림사장조(G#)', feel:'신비롭고 독특한 느낌' },
+  'A' :{ name:'가장조(A)',  feel:'밝고 편안한 느낌' },
+  'A#':{ name:'올림가장조(A#)', feel:'화려하고 풍성한 느낌' },
+  'B' :{ name:'나장조(B)',  feel:'서정적이고 섬세한 느낌' },
+};
+
+// ══════════════════════════════════════════════════════
+//  MIR 엔진 1 — 자기상관 BPM (개선판)
+// ══════════════════════════════════════════════════════
+function calcBPM(audioBuffer) {
+  const data    = audioBuffer.getChannelData(0);
+  const sr      = audioBuffer.sampleRate;
+  const hopSize = 256;
+  const winSize = 1024;
+  const frames  = Math.floor((data.length - winSize) / hopSize);
+
+  // 온셋 강도 (스펙트럼 플럭스 방식)
+  const onset = new Float32Array(frames);
+  let prevMag = new Float32Array(winSize / 2);
+
+  for (let f = 0; f < frames; f++) {
+    const mag = new Float32Array(winSize / 2);
+    // 간단 FFT 대신 주파수 대역 에너지 사용 (저역 60~300Hz 집중)
+    const start = f * hopSize;
+    let energy  = 0;
+    for (let i = 0; i < winSize; i++) {
+      energy += data[start + i] ** 2;
+    }
+    const rms = Math.sqrt(energy / winSize);
+    onset[f]  = rms;
+    prevMag   = mag;
+  }
+
+  // 이동 평균으로 정규화
+  const winLen = Math.floor(sr / hopSize); // 약 1초
+  const norm   = new Float32Array(frames);
+  for (let f = 0; f < frames; f++) {
+    let sum = 0, cnt = 0;
+    for (let k = Math.max(0, f - winLen); k < Math.min(frames, f + winLen); k++) {
+      sum += onset[k]; cnt++;
+    }
+    norm[f] = onset[f] - (sum / cnt);
+    if (norm[f] < 0) norm[f] = 0;
+  }
+
+  // 자기상관
+  const fps    = sr / hopSize;
+  const minLag = Math.floor(fps * 60 / 220);
+  const maxLag = Math.floor(fps * 60 / 40);
+  let bestLag  = minLag, bestCorr = -Infinity;
+
+  for (let lag = minLag; lag <= maxLag; lag++) {
+    let corr = 0;
+    const n  = frames - lag;
+    for (let i = 0; i < n; i++) corr += norm[i] * norm[i + lag];
+    if (corr > bestCorr) { bestCorr = corr; bestLag = lag; }
+  }
+
+  // 배수 보정 (하프타임·더블타임 제거)
+  const rawBPM = (fps / bestLag) * 60;
+  let bpm = rawBPM;
+  if (bpm > 160) bpm /= 2;
+  if (bpm < 50)  bpm *= 2;
+  bpm = Math.round(bpm);
+  return (bpm >= 40 && bpm <= 220) ? bpm : null;
+}
+
+// ══════════════════════════════════════════════════════
+//  MIR 엔진 2 — 박자 추정 (비트 간격 분산 분석)
+// ══════════════════════════════════════════════════════
+function estimateMeter(bpm) {
+  if (!bpm) return '—';
+  // 3박자 영역: 60~80 BPM (왈츠 기준)
+  // 6/8박자 영역: 50~70 BPM
+  if (bpm >= 55 && bpm <= 82) return '3박자';
+  if (bpm > 82  && bpm < 185) return '4박자';
+  if (bpm >= 185)              return '2박자';
+  return '—';
+}
+
+// ══════════════════════════════════════════════════════
+//  MIR 엔진 3 — 스펙트럼 특성 분석 (개선판)
+//  스펙트럼 무게중심·롤오프·영교차율·RMS
+// ══════════════════════════════════════════════════════
+function analyzeSpectrum(audioBuffer) {
+  const data = audioBuffer.getChannelData(0);
+  const sr   = audioBuffer.sampleRate;
+  const N    = 2048;
+  const hop  = Math.floor(data.length / 10);
+
+  let centSum=0, rollSum=0, zcrSum=0, rmsSum=0, cnt=0;
+
+  for (let start=0; start+N<data.length; start+=hop) {
+    const frame = data.slice(start, start+N);
+
+    // 해닝 윈도우
+    const win = new Float32Array(N);
+    for (let i=0;i<N;i++) win[i]=frame[i]*(0.5-0.5*Math.cos(2*Math.PI*i/N));
+
+    // 간이 DFT 크기 스펙트럼 (저해상도지만 빠름)
+    const BINS = 256; // 충분한 해상도
+    const mag  = new Float32Array(BINS);
+    for (let k=0;k<BINS;k++){
+      let re=0,im=0;
+      const step=Math.floor(N/BINS);
+      for (let n=0;n<N;n+=step){
+        const a=-2*Math.PI*k*n/N;
+        re+=win[n]*Math.cos(a);
+        im+=win[n]*Math.sin(a);
+      }
+      mag[k]=Math.sqrt(re*re+im*im);
+    }
+
+    // 스펙트럼 무게중심
+    let sf=0,sm=0;
+    for (let k=0;k<BINS;k++){
+      const hz=k*sr/N;
+      sf+=hz*mag[k]; sm+=mag[k];
+    }
+    centSum += sm>0 ? sf/sm : 0;
+
+    // 롤오프 (85%)
+    const tot=sm;
+    let cum=0, roll=0;
+    for (let k=0;k<BINS;k++){
+      cum+=mag[k];
+      if(cum>=tot*0.85){ roll=k*sr/N; break; }
+    }
+    rollSum+=roll;
+
+    // 영교차율 (Zero Crossing Rate) — 타악기·잡음 지표
+    let zcr=0;
+    for (let i=1;i<N;i++) if(frame[i-1]*frame[i]<0) zcr++;
+    zcrSum+=zcr/N;
+
+    // RMS
+    let e=0;
+    for (const s of frame) e+=s*s;
+    rmsSum+=Math.sqrt(e/frame.length);
+
+    cnt++;
+    if(cnt>=8) break;
+  }
+
+  return {
+    centroid: centSum/cnt,  // 높을수록 밝고 선명
+    rolloff:  rollSum/cnt,  // 높을수록 고음 풍부
+    zcr:      zcrSum/cnt,   // 높을수록 잡음·타악기 성분 강함
+    rms:      rmsSum/cnt,   // 전체 음량·세기
+  };
+}
+
+// ══════════════════════════════════════════════════════
+//  MIR 엔진 4 — 악기 추정 (스펙트럼 특성 기반, 개선)
+// ══════════════════════════════════════════════════════
+function estimateInstruments(spectrum, bpm) {
+  const { centroid, rolloff, zcr, rms } = spectrum;
+  const instruments = [];
+
+  // 피아노: 중고음 무게중심(800~2500Hz), 낮은 영교차율, 중간 음량
+  if (centroid>800 && centroid<3000 && zcr<0.08 && rms>0.01)
+    instruments.push({ name:'피아노', conf:85, icon:'🎹' });
+
+  // 어쿠스틱 기타: 중저음 무게중심(400~1500Hz), 낮은 영교차율
+  if (centroid>400 && centroid<1600 && zcr<0.1 && rms>0.008)
+    instruments.push({ name:'어쿠스틱 기타', conf:75, icon:'🎸' });
+
+  // 전기 기타: 높은 무게중심, 롤오프 높음
+  if (centroid>2000 && rolloff>4000 && zcr>0.05)
+    instruments.push({ name:'전기 기타', conf:70, icon:'🎸' });
+
+  // 바이올린/현악기: 높은 무게중심, 높은 롤오프, 낮은 영교차율
+  if (centroid>2500 && rolloff>5000 && zcr<0.08)
+    instruments.push({ name:'현악기(바이올린·첼로)', conf:72, icon:'🎻' });
+
+  // 드럼/타악기: 높은 영교차율, 강한 에너지
+  if (zcr>0.12 && rms>0.02)
+    instruments.push({ name:'타악기·드럼', conf:78, icon:'🥁' });
+
+  // 보컬: 중음 무게중심(250~2000Hz), 낮은 영교차율, 강한 에너지
+  if (centroid>250 && centroid<2200 && zcr<0.07 && rms>0.02)
+    instruments.push({ name:'보컬(노래)', conf:80, icon:'🎤' });
+
+  // 전자악기: 낮은 무게중심, 높은 에너지, 낮은 영교차율
+  if (centroid<800 && rms>0.04 && zcr<0.06)
+    instruments.push({ name:'전자악기·베이스', conf:73, icon:'🎛' });
+
+  // 플루트/목관악기: 매우 높은 무게중심, 낮은 zcr
+  if (centroid>3000 && rolloff>6000 && zcr<0.07)
+    instruments.push({ name:'목관악기·플루트', conf:68, icon:'🎵' });
+
+  // 결과가 없으면 fallback
+  if (instruments.length===0) {
+    if (centroid>2000)
+      instruments.push({ name:'고음 악기(기타·관악기류)', conf:50, icon:'🎵' });
+    else
+      instruments.push({ name:'저중음 악기(피아노·현악기류)', conf:50, icon:'🎵' });
+  }
+
+  return instruments.sort((a,b)=>b.conf-a.conf).slice(0,3);
+}
+
+// ══════════════════════════════════════════════════════
+//  MIR 엔진 5 — 분위기 추정 (다차원)
+// ══════════════════════════════════════════════════════
+function estimateMood(bpm, spectrum) {
+  const { centroid, rms, zcr } = spectrum;
+  if (!bpm && !centroid) return '분석 어려움';
+
+  const bright   = centroid > 2000;
+  const loud     = rms      > 0.04;
+  const percussive = zcr    > 0.1;
+
+  if (!bpm) {
+    if (bright && loud) return '활기차고 밝은';
+    if (!bright && !loud) return '차분하고 서정적인';
+    return '따뜻하고 부드러운';
+  }
+
+  if (bpm < 65) {
+    if (!bright) return '고요하고 명상적인';
+    return '서정적이고 섬세한';
+  }
+  if (bpm < 80) {
+    if (!bright && !loud) return '잔잔하고 평화로운';
+    return '따뜻하고 서정적인';
+  }
+  if (bpm < 95) {
+    if (!bright) return '차분하고 편안한';
+    return '밝고 부드러운';
+  }
+  if (bpm < 115) {
+    if (!loud)  return '경쾌하고 자연스러운';
+    return '밝고 활기찬';
+  }
+  if (bpm < 135) {
+    if (percussive) return '역동적이고 신나는';
+    return '힘차고 당당한';
+  }
+  if (bpm < 160) return '흥겹고 에너지 넘치는';
+  return '매우 강렬하고 격렬한';
+}
+
+// ══════════════════════════════════════════════════════
+//  MIR 엔진 6 — 장르 추정
+// ══════════════════════════════════════════════════════
+function estimateGenre(bpm, spectrum, instruments, apiGenre) {
+  if (apiGenre) return apiGenre;
+
+  const instNames = instruments.map(i=>i.name).join(' ');
+  const { centroid, rms, zcr, rolloff } = spectrum;
+
+  const hasPiano  = instNames.includes('피아노');
+  const hasVocal  = instNames.includes('보컬');
+  const hasGuitar = instNames.includes('기타');
+  const hasElec   = instNames.includes('전자악기');
+  const hasDrum   = instNames.includes('타악기');
+  const hasString = instNames.includes('현악기');
+
+  if (!bpm) {
+    if (hasPiano && !hasDrum)    return '뉴에이지 / 피아노 연주';
+    if (hasString && !hasDrum)   return '클래식 / 현악 연주';
+    if (hasVocal)                return '가요 / 팝';
+    return '연주곡';
+  }
+
+  // 피아노 중심, 느림 → 뉴에이지
+  if (hasPiano && !hasDrum && bpm<95)  return '뉴에이지 / 피아노 연주곡';
+  // 피아노 + 보컬, 느림 → 발라드
+  if (hasPiano && hasVocal && bpm<100) return '팝 발라드';
+  // 기타 + 보컬, 느림 → 포크·어쿠스틱
+  if (hasGuitar && hasVocal && bpm<110 && !hasElec) return '포크 / 어쿠스틱 팝';
+  // 현악기, 느림 → 클래식
+  if (hasString && !hasDrum && bpm<120) return '클래식 / 현악 앙상블';
+  // 전자악기 + 빠름 → EDM
+  if (hasElec && bpm>125)  return 'EDM / 일렉트로닉';
+  // 드럼 + 빠름 → 팝·댄스
+  if (hasDrum && bpm>120)  return '댄스팝 / 클럽';
+  // 드럼 + 중간 → 팝·록
+  if (hasDrum && bpm>90)   return '팝 / 록';
+  // 보컬 중심
+  if (hasVocal && bpm<90)  return '발라드 / 슬로우';
+  if (hasVocal)            return '팝 / 가요';
+
+  // 순수 템포 기반 fallback
+  if (bpm<75)  return '느린 연주곡 / 발라드';
+  if (bpm<100) return '미디엄 템포 연주곡';
+  if (bpm<130) return '팝 / 미디엄 업템포';
+  return '업템포 댄스 / 팝';
+}
+
+// ══════════════════════════════════════════════════════
+//  조성 추정 — 크로마 + 프로파일 매칭
+// ══════════════════════════════════════════════════════
+function calcKey(audioBuffer) {
+  const data  = audioBuffer.getChannelData(0);
+  const sr    = audioBuffer.sampleRate;
+  const notes = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const chroma= new Array(12).fill(0);
+  const N     = 4096;
+  const binHz = sr / N;
+  const hop   = Math.floor(data.length / 8);
+
+  for (let start=0; start+N<data.length; start+=hop) {
+    for (let k=1; k<N/2; k++) {
+      let re=0, im=0;
+      for (let n=0; n<N; n+=4) { // 간격을 두어 속도 확보
+        const a=-2*Math.PI*k*n/N;
+        re+=data[start+n]*Math.cos(a);
+        im+=data[start+n]*Math.sin(a);
+      }
+      const hz=k*binHz;
+      if (hz<80||hz>2000) continue;
+      const mag=Math.sqrt(re*re+im*im);
+      const midi=12*Math.log2(hz/440)+69;
+      const n2=((Math.round(midi)%12)+12)%12;
+      chroma[n2]+=mag;
+    }
+  }
+  return notes[chroma.indexOf(Math.max(...chroma))];
+}
+
+// ══════════════════════════════════════════════════════
+//  빠르기 텍스트
+// ══════════════════════════════════════════════════════
+function tempoText(bpm) {
+  if (!bpm) return { speed:'—', label:'—', desc:'' };
+  if (bpm<55)  return { speed:'매우 느림', label:`${bpm} BPM`, desc:'라르고(Largo)' };
+  if (bpm<70)  return { speed:'느림',      label:`${bpm} BPM`, desc:'아다지오(Adagio)' };
+  if (bpm<85)  return { speed:'느린 편',   label:`${bpm} BPM`, desc:'안단테(Andante)' };
+  if (bpm<100) return { speed:'보통',      label:`${bpm} BPM`, desc:'모데라토(Moderato)' };
+  if (bpm<120) return { speed:'조금 빠름', label:`${bpm} BPM`, desc:'알레그레토(Allegretto)' };
+  if (bpm<145) return { speed:'빠름',      label:`${bpm} BPM`, desc:'알레그로(Allegro)' };
+  if (bpm<175) return { speed:'매우 빠름', label:`${bpm} BPM`, desc:'비바체(Vivace)' };
+  return         { speed:'극도로 빠름',    label:`${bpm} BPM`, desc:'프레스토(Presto)' };
+}
+
+// ══════════════════════════════════════════════════════
+//  해설문 생성
+// ══════════════════════════════════════════════════════
+function buildSentence(bpm, meter, keyNote, mood, genre, instruments, spectrum) {
+  const tempo   = tempoText(bpm);
+  const keyInfo = KEY_KO[keyNote];
+  const instStr = instruments.slice(0,2).map(i=>i.name).join('·');
+
+  const parts=[];
+
+  if (instStr) parts.push(`${instStr} 중심의 연주`);
+  if (genre)   parts.push(`${genre} 계열`);
+  if (mood && mood!=='분석 어려움') parts.push(`${mood} 분위기`);
+  if (bpm)     parts.push(`${tempo.speed} 빠르기 — ${tempo.desc} (${bpm} BPM)`);
+  if (meter&&meter!=='—') parts.push(`${meter} 리듬`);
+  if (keyInfo) parts.push(`${keyInfo.name} — ${keyInfo.feel}`);
+  if (spectrum.centroid>0) {
+    if      (spectrum.centroid>3000) parts.push('음색이 밝고 선명함');
+    else if (spectrum.centroid>1500) parts.push('음색이 따뜻하고 중후함');
+    else                              parts.push('음색이 부드럽고 낮은 편');
+  }
+
+  if (!parts.length) return '소리가 충분하지 않아 분석하기 어렵습니다.\n볼륨을 높이고 스피커에 가까이 대고 다시 시도해 보세요.';
+  return parts.join('\n· ') + '\n의 음악입니다.';
+}
+
+// ══════════════════════════════════════════════════════
+//  태그 렌더링
+// ══════════════════════════════════════════════════════
+function renderTags(id, { mood, genre, instruments, bpm, meter }) {
+  const el=document.getElementById(id);
+  if (!el) return;
+  const tempo=tempoText(bpm);
+  let html='';
+  if (mood&&mood!=='분석 어려움') html+=`<span class="stag stag-mood">😊 ${mood}</span>`;
+  if (genre) html+=`<span class="stag stag-genre">🎼 ${genre}</span>`;
+  instruments.slice(0,2).forEach(i=>html+=`<span class="stag stag-inst">${i.icon} ${i.name}</span>`);
+  if (bpm)   html+=`<span class="stag stag-tempo">⏱ ${tempo.speed}</span>`;
+  if (meter&&meter!=='—') html+=`<span class="stag stag-tempo">${meter}</span>`;
+  el.innerHTML=html;
+}
+
+// 분석 그리드 렌더링
+function renderGrid(id, items) {
+  const el=document.getElementById(id);
+  if (!el) return;
+  el.innerHTML=items.map(it=>`
+    <div class="ag-item">
+      <div class="ag-lbl">${it.label}</div>
+      <div class="ag-val">${it.value}</div>
+      ${it.sub?`<div class="ag-sub">${it.sub}</div>`:''}
+    </div>`).join('');
+}
+
+// ══════════════════════════════════════════════════════
+//  녹음 로직
+// ══════════════════════════════════════════════════════
+let mediaRecorder, audioCtx, analyser, source, stream;
+let chunks=[], recording=false, animId, timerInt, elapsed=0;
+let lastBlob=null; // 재시도용
+
+const recordBtn=document.getElementById('recordBtn');
+const btnIcon  =document.getElementById('btnIcon');
+const btnLabel =document.getElementById('btnLabel');
+const statusMsg=document.getElementById('statusMsg');
+const timerBar =document.getElementById('timerBar');
+const timerFill=document.getElementById('timerFill');
+const timerCount=document.getElementById('timerCount');
+const retryBtn =document.getElementById('retryBtn');
+const canvas   =document.getElementById('visualizer');
+const ctx2d    =canvas.getContext('2d');
+
+function setStatus(msg,cls=''){
+  statusMsg.className='status-msg'+(cls?' '+cls:'');
+  statusMsg.textContent=msg;
+}
+
+async function toggleRecord(){
+  if (recording) return;
+  startRecording();
+}
+
+async function startRecording(){
+  ['resultCard','noMatch'].forEach(id=>document.getElementById(id).classList.remove('on'));
+  retryBtn.classList.remove('on');
+
+  try { stream=await navigator.mediaDevices.getUserMedia({audio:true,video:false}); }
+  catch(e){ setStatus('마이크 권한을 허용해 주세요.','err'); return; }
+
+  audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  analyser=audioCtx.createAnalyser();
+  analyser.fftSize=2048;
+  analyser.smoothingTimeConstant=0.5;
+  source=audioCtx.createMediaStreamSource(stream);
+  source.connect(analyser);
+
+  chunks=[];
+  mediaRecorder=new MediaRecorder(stream, { mimeType: getSupportedMime() });
+  mediaRecorder.ondataavailable=e=>{ if(e.data.size>0) chunks.push(e.data); };
+  mediaRecorder.onstop=processAudio;
+  mediaRecorder.start(500); // 500ms 단위로 chunk 수집
+
+  recording=true;
+  recordBtn.classList.add('recording');
+  btnIcon.textContent='⏹'; btnLabel.textContent='녹음 중…';
+  setStatus('🎙 듣고 있습니다… 스피커에 가까이 대 주세요','active');
+  drawWave();
+
+  elapsed=0;
+  timerBar.classList.add('on');
+  timerCount.classList.add('on');
+  timerFill.style.width='0%';
+  timerInt=setInterval(()=>{
+    elapsed+=0.1;
+    timerFill.style.width=(elapsed/RECORD_SEC*100)+'%';
+    timerCount.textContent=Math.ceil(RECORD_SEC-elapsed)+'초 남음';
+    if(elapsed>=RECORD_SEC) stopRecording();
+  },100);
+}
+
+function getSupportedMime(){
+  const types=['audio/webm;codecs=opus','audio/webm','audio/ogg','audio/mp4'];
+  for(const t of types) if(MediaRecorder.isTypeSupported(t)) return t;
+  return '';
+}
+
+function stopRecording(){
+  if(!recording) return;
+  recording=false;
+  clearInterval(timerInt);
+  cancelAnimationFrame(animId);
+  mediaRecorder.stop();
+  stream.getTracks().forEach(t=>t.stop());
+  recordBtn.classList.remove('recording');
+  recordBtn.classList.add('analyzing');
+  btnIcon.textContent='🔍'; btnLabel.textContent='분석 중…';
+  setStatus('음악을 분석하고 있습니다…','active');
+  timerBar.classList.remove('on');
+  timerCount.classList.remove('on');
+  ctx2d.clearRect(0,0,canvas.width,canvas.height);
+}
+
+function drawWave(){
+  const W=canvas.width=canvas.offsetWidth;
+  const H=canvas.height=canvas.offsetHeight;
+  const buf=new Uint8Array(analyser.frequencyBinCount);
+  function draw(){
+    if(!recording) return;
+    animId=requestAnimationFrame(draw);
+    analyser.getByteTimeDomainData(buf);
+    ctx2d.clearRect(0,0,W,H);
+    ctx2d.strokeStyle='rgba(139,124,248,.85)'; ctx2d.lineWidth=1.5;
+    ctx2d.beginPath();
+    const sw=W/buf.length; let x=0;
+    for(let i=0;i<buf.length;i++){
+      const y=(buf[i]/128)*H/2;
+      i===0?ctx2d.moveTo(x,y):ctx2d.lineTo(x,y); x+=sw;
+    }
+    ctx2d.stroke();
+  }
+  draw();
+}
+
+async function processAudio(){
+  const mime=chunks[0]?.type||'audio/webm';
+  const blob=new Blob(chunks,{type:mime});
+  lastBlob=blob;
+
+  // AudioBuffer 디코딩
+  let audioBuffer=null;
+  try{
+    const ab=await blob.arrayBuffer();
+    const offCtx=new OfflineAudioContext(1,audioCtx.sampleRate*RECORD_SEC,audioCtx.sampleRate);
+    audioBuffer=await offCtx.decodeAudioData(ab);
+  }catch(e){ console.warn('디코딩 실패:',e); }
+
+  // MIR 분석
+  setStatus('BPM·박자 분석 중…','active');
+  const bpm      = audioBuffer ? calcBPM(audioBuffer)       : null;
+  const meter    = estimateMeter(bpm);
+  const keyNote  = audioBuffer ? calcKey(audioBuffer)       : '—';
+  const spectrum = audioBuffer ? analyzeSpectrum(audioBuffer): {centroid:0,rolloff:0,zcr:0,rms:0};
+  const instruments = estimateInstruments(spectrum, bpm);
+  const tempo    = tempoText(bpm);
+  const mood     = estimateMood(bpm, spectrum);
+
+  // AudD
+  setStatus('곡명 조회 중…','active');
+  const apiResult=await callAudD(blob);
+  const apiGenre=apiResult?.spotify?.album?.genres?.[0]||apiResult?.apple_music?.genreNames?.[0]||null;
+  const genre=estimateGenre(bpm,spectrum,instruments,apiGenre);
+  const sentence=buildSentence(bpm,meter,keyNote,mood,genre,instruments,spectrum);
+  const analysis={mood,genre,instruments,bpm,meter};
+
+  // 그리드 항목
+  const keyInfo=KEY_KO[keyNote];
+  const gridItems=[
+    { label:'악기 추정',    value:instruments[0]?.icon+' '+instruments[0]?.name||'—',
+      sub: instruments[1]? instruments[1].icon+' '+instruments[1].name : '' },
+    { label:'분위기',       value:mood||'—', sub:'' },
+    { label:'빠르기',       value:tempo.speed||'—', sub:tempo.desc },
+    { label:'조성',         value:keyInfo?.name||keyNote||'—', sub:keyInfo?.feel||'' },
+  ];
+
+  // 버튼 초기화
+  recordBtn.classList.remove('analyzing');
+  btnIcon.textContent='🎵'; btnLabel.textContent='다시 시작';
+
+  if(apiResult) showResult(apiResult,bpm,meter,keyNote,tempo,analysis,sentence,gridItems);
+  else          showNoResult(bpm,meter,keyNote,tempo,analysis,sentence,gridItems);
+
+  saveHistory({
+    time:new Date().toLocaleString('ko-KR'),
+    title:  apiResult?.title ||'(곡명 미인식)',
+    artist: apiResult?.artist||'—',
+    bpm, meter, key:keyNote, mood, genre,
+    instruments: instruments.map(i=>i.name),
+    sentence,
+    spotify: apiResult?.spotify?.external_urls?.spotify||null,
+  });
+
+  if(audioCtx){ audioCtx.close(); audioCtx=null; }
+}
+
+async function callAudD(blob){
+  try{
+    const fd=new FormData();
+    fd.append('file',blob,'audio.webm');
+    fd.append('api_token',API_TOKEN);
+    fd.append('return','apple_music,spotify,deezer');
+    const resp=await fetch('https://api.audd.io/',{method:'POST',body:fd});
+    const data=await resp.json();
+    if(data.status==='success'&&data.result) return data.result;
+    // 실패 이유 표시
+    if(data.error) setStatus(`곡명 조회 실패: ${data.error.error_message||data.status}`,'err');
+    return null;
+  }catch(e){
+    setStatus('네트워크 오류로 곡명 조회 실패','err');
+    return null;
+  }
+}
+
+// 재시도 — 저장된 blob으로 AudD만 다시 호출
+async function retryAudD(){
+  if(!lastBlob) return;
+  retryBtn.classList.remove('on');
+  setStatus('곡명 재검색 중…','active');
+  const result=await callAudD(lastBlob);
+  if(result){
+    document.getElementById('songTitle').textContent  = result.title  ||'—';
+    document.getElementById('songArtist').textContent = result.artist ||'—';
+    document.getElementById('songAlbum').textContent  = result.album  ||'—';
+    const art=result.spotify?.album?.images?.[0]?.url||null;
+    if(art){
+      const ae=document.getElementById('albumEl');
+      if(ae) ae.outerHTML=`<img class="album-art" id="albumEl" src="${art}" alt="앨범">`;
+    }
+    setStatus('곡명 인식 성공!','ok');
+    document.getElementById('resultCard').classList.add('on');
+    document.getElementById('noMatch').classList.remove('on');
+  }else{
+    setStatus('재검색에도 곡명을 찾지 못했습니다.','err');
+    retryBtn.classList.add('on');
+  }
+}
+
+function showResult(r,bpm,meter,key,tempo,analysis,sentence,gridItems){
+  setStatus('분석 완료!','ok');
+  renderTags('styleTags',analysis);
+  renderGrid('analysisGrid',gridItems);
+  document.getElementById('styleSentence').textContent=sentence;
+  document.getElementById('bpmVal').textContent  = bpm ? `${bpm} BPM` : '—';
+  document.getElementById('beatVal').textContent = meter||'—';
+  const ki=KEY_KO[key];
+  document.getElementById('keyVal').textContent  = ki ? ki.name : (key!=='—'?key:'—');
+
+  const art=r.spotify?.album?.images?.[0]?.url||r.apple_music?.artwork?.url?.replace('{w}','80').replace('{h}','80')||null;
+  const ae=document.getElementById('albumEl');
+  if(art) ae.outerHTML=`<img class="album-art" id="albumEl" src="${art}" alt="앨범">`;
+  document.getElementById('songTitle').textContent  = r.title  ||'—';
+  document.getElementById('songArtist').textContent = r.artist ||'—';
+  document.getElementById('songAlbum').textContent  = r.album  ||r.apple_music?.albumName||'—';
+
+  const sr=document.getElementById('streamRow'); sr.innerHTML='';
+  if(r.spotify?.external_urls?.spotify)
+    sr.innerHTML+=`<a class="s-btn s-spotify" href="${r.spotify.external_urls.spotify}" target="_blank">▶ Spotify</a>`;
+  if(r.apple_music?.url)
+    sr.innerHTML+=`<a class="s-btn s-apple" href="${r.apple_music.url}" target="_blank">♫ Apple Music</a>`;
+  const ytQ=encodeURIComponent((r.artist||'')+' '+(r.title||''));
+  sr.innerHTML+=`<a class="s-btn s-youtube" href="https://www.youtube.com/results?search_query=${ytQ}" target="_blank">▶ YouTube</a>`;
+
+  document.getElementById('resultCard').classList.add('on');
+  retryBtn.classList.remove('on');
+}
+
+function showNoResult(bpm,meter,key,tempo,analysis,sentence,gridItems){
+  setStatus('곡명을 찾지 못했습니다. 스타일 분석 결과입니다.','err');
+  renderTags('styleTags2',analysis);
+  renderGrid('analysisGrid2',gridItems);
+  document.getElementById('styleSentence2').textContent=sentence;
+  document.getElementById('bpmVal2').textContent  = bpm ? `${bpm} BPM` : '—';
+  document.getElementById('beatVal2').textContent = meter||'—';
+  const ki=KEY_KO[key];
+  document.getElementById('keyVal2').textContent  = ki ? ki.name : (key!=='—'?key:'—');
+  document.getElementById('noMatch').classList.add('on');
+  retryBtn.classList.add('on');
+}
+
+// ══════════════════════════════════════════════════════
+//  기록 저장
+// ══════════════════════════════════════════════════════
+const SKEY='music_history_v5';
+function saveHistory(item){
+  let list=[]; try{list=JSON.parse(localStorage.getItem(SKEY))||[];}catch{}
+  list.unshift(item); if(list.length>50) list=list.slice(0,50);
+  try{localStorage.setItem(SKEY,JSON.stringify(list));}catch{}
+  if(document.getElementById('tab-history').classList.contains('active')) renderHistory();
+}
+
+function renderHistory(){
+  const list=[]; try{const r=JSON.parse(localStorage.getItem(SKEY)); if(r)list.push(...r);}catch{}
+  const el=document.getElementById('historyContent');
+  if(!list.length){
+    el.innerHTML='<div class="history-empty">아직 감별 기록이 없습니다.<br>음악을 틀고 감별해 보세요. 🎵</div>';
+    return;
+  }
+  let html='<div class="history-list">';
+  for(const item of list){
+    let tagHtml='';
+    if(item.mood)  tagHtml+=`<span class="stag stag-mood"  style="font-size:.52rem;padding:3px 8px;">😊 ${item.mood}</span>`;
+    if(item.genre) tagHtml+=`<span class="stag stag-genre" style="font-size:.52rem;padding:3px 8px;">🎼 ${item.genre}</span>`;
+    (item.instruments||[]).slice(0,2).forEach(i=>tagHtml+=`<span class="stag stag-inst" style="font-size:.52rem;padding:3px 8px;">🎵 ${i}</span>`);
+    if(item.bpm)   tagHtml+=`<span class="stag stag-tempo" style="font-size:.52rem;padding:3px 8px;">⏱ ${item.bpm} BPM</span>`;
+    html+=`
+    <div class="history-item">
+      <div class="hi-top">
+        <div><div class="hi-title">${item.title}</div><div class="hi-artist">${item.artist||'—'}</div></div>
+        <div class="hi-time">${item.time}</div>
+      </div>
+      <div class="hi-tags">${tagHtml}</div>
+      <div class="hi-sent">${item.sentence.replace(/\n/g,' ')}</div>
+      ${item.spotify?`<div style="margin-top:4px;"><a class="s-btn s-spotify" href="${item.spotify}" target="_blank" style="font-size:.52rem;">▶ Spotify</a></div>`:''}
+    </div>`;
+  }
+  html+='</div><button class="clear-btn" onclick="clearHistory()">🗑 기록 모두 지우기</button>';
+  el.innerHTML=html;
+}
+
+function clearHistory(){
+  if(confirm('기록을 모두 지울까요?')){ localStorage.removeItem(SKEY); renderHistory(); }
+}
+
+function switchTab(name,btn){
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  btn.classList.add('active');
+  if(name==='history') renderHistory();
+}
+</script>
+</body>
+</html>
