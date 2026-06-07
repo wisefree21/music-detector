@@ -371,54 +371,103 @@ function calcBPM(audioBuffer) {
 }
 
 // ══════════════════════════════════════════════════════
-//  MIR 엔진 2 — 박자 추정 (BPM 범위 + 음악 관습 기반)
-//  반환: { sign, name, desc } 구조
+//  MIR 엔진 2 — 박자 추정
+//  BPM + 3박 패턴 직접 감지 병행
 // ══════════════════════════════════════════════════════
-function estimateMeter(bpm) {
+function estimateMeter(bpm, audioBuffer) {
   if (!bpm) return { sign:'—', name:'—', desc:'' };
 
-  // 2/4박자: 행진곡·빠른 클래식·폴카 (100~185 BPM)
-  // 행진곡 기준 120 BPM 전후, 빠른 협주곡 130~170 BPM
-  if (bpm >= 100 && bpm < 185)
-    return {
-      sign: '2/4박자',
-      name: '2박자',
-      desc: '한 마디에 두 박자. 행진곡·폴카·빠른 클래식 협주곡에 많습니다.'
-    };
+  // 3박 패턴 감지 — 온셋 자기상관에서 3배 주기 확인
+  let tripleScore = 0;
+  if (audioBuffer) {
+    tripleScore = detectTripleMeter(audioBuffer, bpm);
+  }
 
-  // 6/8박자: 느린 6/8 (48~72 BPM) — 바로크·켈틱
-  if (bpm >= 48 && bpm < 72)
+  // 3박 패턴이 강하면 3/4박자
+  if (tripleScore > 0.55) {
+    if (bpm >= 48 && bpm < 72)
+      return {
+        sign:'6/8박자', name:'6박자',
+        desc:'한 마디에 여섯 박자(셋씩 두 묶음). 바로크·켈틱·느린 왈츠에 많습니다.'
+      };
     return {
-      sign: '6/8박자',
-      name: '6박자',
-      desc: '한 마디에 여섯 박자, 셋씩 두 묶음. 바로크·켈틱·발라드에 많습니다.'
+      sign:'3/4박자', name:'3박자',
+      desc:'한 마디에 세 박자. 왈츠·미뉴에트·볼레로·스케르초에 많습니다.'
     };
+  }
 
-  // 3/4박자: 왈츠 영역 (72~100 BPM)
-  if (bpm >= 72 && bpm < 100)
-    return {
-      sign: '3/4박자',
-      name: '3박자',
-      desc: '한 마디에 세 박자. 왈츠·미뉴에트·볼레로에 많습니다.'
-    };
-
-  // 4/4박자: 보통 팝·록·느린 곡 (40~72 BPM 느린 4/4)
+  // 3박 패턴이 약하면 BPM으로 판단
   if (bpm >= 40 && bpm < 72)
     return {
-      sign: '4/4박자',
-      name: '4박자',
-      desc: '한 마디에 네 박자. 가장 흔한 박자입니다.'
+      sign:'4/4박자', name:'4박자',
+      desc:'한 마디에 네 박자. 가장 흔한 박자입니다.'
     };
-
-  // 매우 빠른 경우
+  if (bpm >= 72 && bpm < 88)
+    return {
+      sign:'3/4 또는 4/4박자', name:'3~4박자',
+      desc:'왈츠(3/4) 또는 보통 4박자 가능성이 모두 있습니다.'
+    };
+  if (bpm >= 88 && bpm < 185)
+    return {
+      sign:'2/4 또는 4/4박자', name:'2~4박자',
+      desc:'빠른 4박자 또는 행진곡·폴카 계열 2박자입니다.'
+    };
   if (bpm >= 185)
     return {
-      sign: '2/4박자',
-      name: '2박자',
-      desc: '매우 빠른 2박자. 프레스토 행진곡·타란텔라 계열입니다.'
+      sign:'2/4박자', name:'2박자',
+      desc:'매우 빠른 2박자. 타란텔라·빠른 행진곡 계열입니다.'
     };
 
   return { sign:'4/4박자', name:'4박자', desc:'한 마디에 네 박자.' };
+}
+
+// 3박 패턴 감지 함수
+// 온셋 강도의 자기상관에서 1박 주기의 3배 성분이 얼마나 강한지 측정
+function detectTripleMeter(audioBuffer, bpm) {
+  try {
+    const data    = audioBuffer.getChannelData(0);
+    const sr      = audioBuffer.sampleRate;
+    const hopSize = 256;
+    const winSize = 512;
+    const frames  = Math.floor((data.length - winSize) / hopSize);
+    const fps     = sr / hopSize;
+
+    // 온셋 강도
+    const onset = new Float32Array(frames);
+    let prevE   = 0;
+    for (let f=0; f<frames; f++) {
+      let e=0;
+      for (let i=0; i<winSize; i++) e+=data[f*hopSize+i]**2;
+      e = Math.sqrt(e/winSize);
+      onset[f] = Math.max(0, e-prevE);
+      prevE    = e;
+    }
+
+    // 1박 길이 (프레임 단위)
+    const beatLag   = Math.round(fps*60/bpm);
+    // 3박 길이
+    const tripleLag = beatLag*3;
+    // 2박 길이
+    const dupleLag  = beatLag*2;
+
+    // 자기상관 계산
+    const corrAt = lag => {
+      let c=0, n=frames-lag;
+      for (let i=0;i<n;i++) c+=onset[i]*onset[i+lag];
+      return c/n;
+    };
+
+    const c1 = corrAt(beatLag);
+    const c3 = corrAt(tripleLag);
+    const c2 = corrAt(dupleLag);
+
+    // 3박 성분이 2박 성분보다 강한 비율
+    if (c1===0) return 0;
+    const tripleRatio = c3/(c2+c3+0.0001);
+    return tripleRatio;
+  } catch(e) {
+    return 0;
+  }
 }
 
 // ══════════════════════════════════════════════════════
@@ -894,7 +943,7 @@ async function processAudio(){
   // MIR 분석
   setStatus('BPM·박자 분석 중…','active');
   const bpm      = audioBuffer ? calcBPM(audioBuffer)        : null;
-  const meter    = estimateMeter(bpm);
+  const meter    = estimateMeter(bpm, audioBuffer);
   const keyResult= audioBuffer ? calcKey(audioBuffer)        : { key:'—', mode:'major' };
   const keyNote  = keyResult.key;
   const keyMode  = keyResult.mode;
