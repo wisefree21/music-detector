@@ -28,12 +28,21 @@ body{background:var(--bg);color:var(--text);font-family:'Noto Serif KR',serif;
 header{width:100%;padding:18px 16px 13px;text-align:center;position:relative;}
 header::after{content:'';position:absolute;bottom:0;left:8%;right:8%;height:1px;
   background:linear-gradient(90deg,transparent,var(--accent),transparent);}
-h1{font-size:1.7rem;font-weight:900;
+h1{font-size:1.9rem;font-weight:900;
   background:linear-gradient(135deg,#fff 20%,var(--accent));
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
-  letter-spacing:-0.02em;}
+  letter-spacing:-0.02em;line-height:1.15;}
+.title-sub{
+  display:block;
+  font-size:.95rem;font-weight:700;
+  color:var(--accent);
+  opacity:.85;
+  letter-spacing:.05em;
+  margin-top:2px;
+  -webkit-text-fill-color:var(--accent);
+}
 .subtitle{font-family:'Space Mono',monospace;font-size:.62rem;color:var(--muted);
-  margin-top:6px;letter-spacing:.12em;text-transform:uppercase;}
+  margin-top:7px;letter-spacing:.12em;text-transform:uppercase;}
 
 /* 녹음 */
 .record-zone{display:flex;flex-direction:column;align-items:center;gap:13px;}
@@ -181,7 +190,7 @@ footer{margin-top:34px;font-family:'Space Mono',monospace;font-size:.48rem;
 <body>
 
 <header>
-  <h1>소리결 <span style="font-size:.5em;font-weight:700;opacity:.75;letter-spacing:.01em;">(음악 감별기)</span></h1>
+  <h1>소리결<span class="title-sub">(음악 감별기)</span></h1>
   <p class="subtitle">Music Style Analyzer · MIR + 국악 분석</p>
 </header>
 
